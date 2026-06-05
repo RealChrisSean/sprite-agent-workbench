@@ -27,6 +27,65 @@ RecallMEM is the first dogfood app because it already ran into the real pain:
 local dev worked, Sprite hosting worked, but cold starts, auth gates,
 checkpoints, and "what state is this thing in?" were not obvious enough.
 
+### Dev Log Rule
+
+Update this file whenever work on Sprite Agent Workbench changes behavior,
+deployment state, testing strategy, or reveals a new friction point.
+
+Good dev log entries should capture:
+
+- what changed,
+- why it changed,
+- what broke or surprised us,
+- how we verified it,
+- what remains blocked,
+- and any important URLs, commands, or repo paths future us will need.
+
+The point is not to write a perfect changelog. The point is to preserve the
+scar tissue while it is still fresh.
+
+### Reference Access Points
+
+Sprite Agent Workbench:
+
+- Local repo: `/Users/chrissean/Documents/demos/sprite-agent-workbench`
+- GitHub repo: `https://github.com/RealChrisSean/sprite-agent-workbench`
+- Local dev URL: `http://localhost:1340`
+- Sprite name: `sprite-agent-workbench`
+- Sprite URL: `https://sprite-agent-workbench-bsq7x.sprites.app`
+- Hosted app path: `/home/sprite/app`
+- Current hosted blocker: needs server-side `SPRITES_API_TOKEN` to show live
+  Sprite data.
+
+RecallMEM dogfood target:
+
+- Local repo: `/Users/chrissean/Documents/demos/local-stack/recallmem`
+- Sprite name: `recallmem`
+- Sprite URL: `https://recallmem-bsq7x.sprites.app`
+- Purpose in this project: first real app to monitor because it has the exact
+  Sprite pain this workbench is meant to explain: cold starts, auth-gated URLs,
+  checkpoint timelines, deployment state, and "why is this asleep?" questions.
+
+### Agent Rules Added
+
+Added explicit repo-local rules in `AGENTS.md` so future coding agents know the
+working boundaries and cannot casually wander around the filesystem.
+
+Important rules:
+
+- Work only inside `/Users/chrissean/Documents/demos/sprite-agent-workbench`.
+- Use `/Users/chrissean/Documents/demos/local-stack/recallmem` only as the
+  allowed RecallMEM dogfood/reference workspace.
+- Treat RecallMEM as read-only unless the user explicitly asks for RecallMEM
+  edits.
+- Never touch files outside those directories without explicit user approval.
+- Never commit secrets, `.env*`, `.sprite`, local DB data, or Sprite auth tokens.
+- Keep `SPRITES_API_TOKEN` server-only.
+- Update this dev log whenever behavior, deployment state, tests, or friction
+  changes.
+- Add tests or documented manual checks for meaningful behavior changes.
+- Avoid destructive Sprite commands unless the user explicitly asks.
+
 ### What We Built So Far
 
 - Created a standalone Next.js app outside the RecallMEM repo.
