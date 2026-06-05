@@ -23,9 +23,10 @@ export default async function Home() {
               See why your Sprites are awake, cold, or ready to restore.
             </h1>
             <p className="mt-4 max-w-2xl text-base leading-7 text-slate-700 sm:text-lg">
-              A local dashboard for anyone using Sprites. It reads your
-              authenticated Sprite CLI, lists every Sprite, tracks checkpoint
-              history, and explains cold state with evidence instead of vibes.
+              A dashboard for anyone using Sprites. It reads a hosted
+              Sprites API token when configured, falls back to your local Sprite
+              CLI, tracks checkpoint history, and explains cold state with
+              evidence instead of vibes.
             </p>
           </div>
           <div className="rounded-3xl border border-slate-200 bg-slate-950 p-4 text-sm text-lime-100 shadow-xl">
@@ -42,7 +43,7 @@ export default async function Home() {
 
         {!data.ok ? (
           <section className="rounded-[2rem] border border-red-200 bg-red-50 p-6 text-red-950">
-            <h2 className="text-2xl font-black">Sprite CLI is not ready</h2>
+            <h2 className="text-2xl font-black">Sprite data is not ready</h2>
             <p className="mt-2 text-red-800">{data.error?.message}</p>
             <pre className="mt-4 overflow-x-auto rounded-2xl bg-red-950 p-4 text-sm text-red-50">
               {data.error?.hint}
@@ -51,7 +52,11 @@ export default async function Home() {
         ) : (
           <>
             <section className="grid gap-4 md:grid-cols-4">
-              <MetricCard label="Org" value={data.orgName || "Unknown"} detail="Current Sprite account" />
+              <MetricCard
+                label="Org"
+                value={data.orgName || "Unknown"}
+                detail={`Current Sprite account via ${data.source === "token" ? "API token" : "local CLI"}`}
+              />
               <MetricCard label="Sprites" value={String(data.counts.total)} detail="Visible to this account" />
               <MetricCard
                 label="Running / Warm"

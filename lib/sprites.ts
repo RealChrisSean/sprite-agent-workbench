@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
+const DEFAULT_SPRITES_API_BASE_URL = "https://api.sprites.dev";
 
 export type SpriteStatus = "cold" | "warm" | "running" | string;
 
@@ -47,6 +48,8 @@ export interface SpriteCommandError {
   hint: string;
 }
 
+export type SpriteDataSource = "token" | "cli";
+
 export interface DashboardSprite extends SpriteSummary {
   checkpoints: SpriteCheckpoint[];
   sleep: SleepInference;
@@ -56,6 +59,7 @@ export interface DashboardSprite extends SpriteSummary {
 
 export interface DashboardData {
   ok: boolean;
+  source: SpriteDataSource | null;
   orgName: string | null;
   counts: {
     total: number;
@@ -83,13 +87,66 @@ export interface HealthCheckResult {
 }
 
 async function runSpriteApi<T>(path: string): Promise<T> {
+  const token = getSpriteApiToken();
+  if (token) {
+    return runSpriteApiWithToken<T>(path, token);
+  }
+
   const { stdout } = await execFileAsync("sprite", ["api", path], {
     maxBuffer: 1024 * 1024 * 5,
   });
   return parseSpriteApiJson<T>(stdout);
 }
 
-function parseSpriteApiJson<T>(output: string): T {
+async function runSpriteApiWithToken<T>(
+  path: string,
+  token: string
+): Promise<T> {
+  const baseUrl =
+    process.env.SPRITES_API_BASE_URL?.trim() || DEFAULT_SPRITES_API_BASE_URL;
+  const url = createSpriteApiUrl(path, baseUrl);
+  const res = await fetch(url, {
+    headers: {
+      accept: "application/json",
+      authorization: `Bearer ${token}`,
+    },
+    cache: "no-store",
+    signal: AbortSignal.timeout(10_000),
+  });
+  const text = await res.text();
+
+  if (!res.ok) {
+    throw new Error(formatSpriteApiError(res.status, res.statusText, text));
+  }
+
+  return JSON.parse(text) as T;
+}
+
+export function createSpriteApiUrl(path: string, baseUrl: string): URL {
+  return new URL(path, baseUrl);
+}
+
+export function formatSpriteApiError(
+  status: number,
+  statusText: string,
+  text: string
+): string {
+  return `Sprites API request failed (${status} ${statusText}): ${formatApiError(text)}`;
+}
+
+export function formatApiError(text: string): string {
+  if (!text) return "No response body";
+  try {
+    const parsed = JSON.parse(text) as { detail?: unknown; error?: unknown };
+    if (typeof parsed.detail === "string") return parsed.detail;
+    if (typeof parsed.error === "string") return parsed.error;
+  } catch {
+    // Fall through to the raw response preview.
+  }
+  return text.slice(0, 240);
+}
+
+export function parseSpriteApiJson<T>(output: string): T {
   const start = output.search(/[\[{]/);
   if (start === -1) {
     throw new Error(`Sprite API returned no JSON: ${output.slice(0, 200)}`);
@@ -99,8 +156,9 @@ function parseSpriteApiJson<T>(output: string): T {
 
 export async function getDashboardData(): Promise<DashboardData> {
   const fetchedAt = new Date().toISOString();
+  const source = getSpriteDataSource();
   try {
-    const list = await runSpriteApi<SpriteListResponse>("/v1/sprites");
+    const list = await runSpriteApi<SpriteListResponse>("/v1/sprites/");
     const sprites = await Promise.all(
       list.sprites.map(async (sprite) => {
         const [checkpoints, health] = await Promise.all([
@@ -120,6 +178,7 @@ export async function getDashboardData(): Promise<DashboardData> {
 
     return {
       ok: true,
+      source,
       orgName: list.name,
       counts: {
         total: list.sprites.length,
@@ -135,6 +194,7 @@ export async function getDashboardData(): Promise<DashboardData> {
   } catch (err) {
     return {
       ok: false,
+      source,
       orgName: null,
       counts: {
         total: 0,
@@ -148,10 +208,21 @@ export async function getDashboardData(): Promise<DashboardData> {
       fetchedAt,
       error: {
         message: err instanceof Error ? err.message : String(err),
-        hint: "Run `sprite login` in your terminal, then refresh this dashboard.",
+        hint:
+          source === "token"
+            ? "Check `SPRITES_API_TOKEN` on the server. If this is hosted on a Sprite, set it as an environment secret and restart the app."
+            : "Run `sprite login` in your terminal, or set `SPRITES_API_TOKEN` for hosted mode, then refresh this dashboard.",
       },
     };
   }
+}
+
+export function getSpriteDataSource(): SpriteDataSource {
+  return getSpriteApiToken() ? "token" : "cli";
+}
+
+function getSpriteApiToken(): string | null {
+  return process.env.SPRITES_API_TOKEN?.trim() || null;
 }
 
 async function getCheckpoints(

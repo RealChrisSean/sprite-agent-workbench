@@ -26,7 +26,7 @@ sprite-agent-workbench/
 ```
 
 Users clone the repo, run it locally, and point it at their existing Sprite
-account through the authenticated Sprite CLI.
+account through either `SPRITES_API_TOKEN` or the authenticated Sprite CLI.
 
 The optional skill is an agent helper:
 
@@ -49,14 +49,16 @@ Short version:
 
 ## V1: Read-Only Sprite Dashboard
 
-Goal: if `sprite list` works in a user's terminal, the dashboard works.
+Goal: if `SPRITES_API_TOKEN` is set, hosted deployments work. If not, and
+`sprite list` works in a user's terminal, local development works.
 
 Data source:
 
-- Use the locally authenticated `sprite` CLI.
-- Call `sprite api /v1/sprites` for visible Sprite state.
-- Call `sprite api /v1/sprites/{name}/checkpoints` for checkpoint history.
-- Avoid requiring users to copy API tokens into the app for V1.
+- Prefer server-only `SPRITES_API_TOKEN`.
+- Call `https://api.sprites.dev/v1/sprites` for visible Sprite state.
+- Call `https://api.sprites.dev/v1/sprites/{name}/checkpoints` for checkpoint
+  history.
+- Fall back to the locally authenticated `sprite` CLI when no token is set.
 
 Dashboard should show:
 
@@ -194,16 +196,19 @@ skills/codex/templates/checkpoint-policy.md
 The skill should not duplicate the dashboard. It should be a workflow layer on
 top of it.
 
-## V7: Hosted / Token Mode
+## V7: Hosted Hardening
 
-The local CLI mode is best for V1 because it is low-friction.
-
-Hosted mode can come later:
+Hosted token mode exists in V1:
 
 - User provides a Sprite API token.
 - Dashboard runs without requiring the local CLI.
 - Token is stored only in environment variables or a secure secret store.
+
+Future hosted hardening:
+
+- Add an onboarding screen for missing/invalid hosted tokens.
 - Support multiple orgs/accounts if the API exposes them.
+- Add clearer deployment docs for running the workbench on a Sprite.
 
 This matters if the dashboard itself is deployed on a Sprite, Fly Machine, or
 another always-on app host.
@@ -246,7 +251,7 @@ Every warning should answer:
 The first read-only version exists:
 
 - New Next.js app in `/Users/chrissean/Documents/demos/sprite-agent-workbench`.
-- Reads authenticated Sprite CLI.
+- Reads hosted `SPRITES_API_TOKEN`, with authenticated Sprite CLI fallback.
 - Lists Sprites.
 - Shows status counts.
 - Shows checkpoint history.
@@ -255,8 +260,9 @@ The first read-only version exists:
 
 Next best step:
 
-1. Add per-Sprite detail pages.
-2. Then add local status history.
-3. Then add checkpoint actions.
-4. Then add agent run tracking.
-5. Then add the optional Codex skill.
+1. Add hosted setup docs.
+2. Add per-Sprite detail pages.
+3. Then add local status history.
+4. Then add checkpoint actions.
+5. Then add agent run tracking.
+6. Then add the optional Codex skill.

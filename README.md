@@ -8,12 +8,13 @@ terminal output.
 
 ## What works now
 
-- Lists every Sprite visible to your authenticated Sprite CLI.
+- Lists every Sprite visible to your authenticated Sprite account.
 - Shows org-level running/warm/cold counts.
 - Shows Sprite URL auth mode, last running time, and last warming time.
 - Lists checkpoints for each Sprite.
 - Explains cold/warm/running state with evidence-backed inference.
 - Skips public health checks when a Sprite URL is auth gated.
+- Supports hosted `SPRITES_API_TOKEN` mode with local Sprite CLI fallback.
 
 RecallMEM on Sprite is the first real dogfood target, but the dashboard is not
 hardcoded to RecallMEM. It should work for any Sprite your CLI can access.
@@ -21,9 +22,14 @@ hardcoded to RecallMEM. It should work for any Sprite your CLI can access.
 See [docs/PLAN.md](docs/PLAN.md) for the full product plan, rollout path, and
 optional Codex skill strategy.
 
+See [docs/TODO.md](docs/TODO.md) for the current working task list.
+
+See [docs/TESTING.md](docs/TESTING.md) for the test policy and user-runnable
+checks.
+
 ## Run locally
 
-Install the Sprite CLI and log in first:
+For local development, install the Sprite CLI and log in first:
 
 ```bash
 sprite login
@@ -39,11 +45,36 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-## Why the dashboard uses the CLI first
+## Hosted mode
 
-The fastest path for users is: if `sprite list` works in their terminal, the
-dashboard can read the same authenticated account. Later versions can add a
-direct token-based API mode for hosted deployments.
+For a hosted deployment, set a server-only Sprites API token:
+
+```bash
+SPRITES_API_TOKEN="your-sprites-token"
+```
+
+The dashboard checks `SPRITES_API_TOKEN` first. If it exists, the app calls
+`https://api.sprites.dev` directly from the server. If it is not set, the app
+falls back to the local `sprite api ...` CLI.
+
+Never use `NEXT_PUBLIC_` for this token. It should stay server-only.
+
+## Test
+
+Run the user-runnable checks before trusting a change:
+
+```bash
+npm run lint
+npm test
+npx tsc --noEmit
+npm run build
+```
+
+## Why the dashboard still supports the CLI
+
+The fastest local path for users is: if `sprite list` works in their terminal,
+the dashboard can read the same authenticated account. Hosted mode exists for
+deployments where the local CLI auth is not available.
 
 ## Next milestones
 
