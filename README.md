@@ -27,6 +27,9 @@ See [docs/TODO.md](docs/TODO.md) for the current working task list.
 See [docs/TESTING.md](docs/TESTING.md) for the test policy and user-runnable
 checks.
 
+See [docs/DEVLOG.md](docs/DEVLOG.md) for the project rationale, deployment
+notes, and friction log.
+
 ## Run locally
 
 For local development, install the Sprite CLI and log in first:
