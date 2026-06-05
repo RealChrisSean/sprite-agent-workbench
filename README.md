@@ -1,36 +1,56 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Sprite Agent Workbench
 
-## Getting Started
+A local dashboard for anyone using [Sprites](https://sprites.dev/).
 
-First, run the development server:
+The goal is simple: if a Sprite is running, warm, cold, checkpointed, restored,
+or idle, the dashboard should make that visible without making you dig through
+terminal output.
+
+## What works now
+
+- Lists every Sprite visible to your authenticated Sprite CLI.
+- Shows org-level running/warm/cold counts.
+- Shows Sprite URL auth mode, last running time, and last warming time.
+- Lists checkpoints for each Sprite.
+- Explains cold/warm/running state with evidence-backed inference.
+- Skips public health checks when a Sprite URL is auth gated.
+
+RecallMEM on Sprite is the first real dogfood target, but the dashboard is not
+hardcoded to RecallMEM. It should work for any Sprite your CLI can access.
+
+See [docs/PLAN.md](docs/PLAN.md) for the full product plan, rollout path, and
+optional Codex skill strategy.
+
+## Run locally
+
+Install the Sprite CLI and log in first:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+sprite login
+sprite list
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Then run the dashboard:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm install
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Open [http://localhost:3000](http://localhost:3000).
 
-## Learn More
+## Why the dashboard uses the CLI first
 
-To learn more about Next.js, take a look at the following resources:
+The fastest path for users is: if `sprite list` works in their terminal, the
+dashboard can read the same authenticated account. Later versions can add a
+direct token-based API mode for hosted deployments.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Next milestones
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Add per-Sprite detail pages.
+- Add checkpoint create/restore controls.
+- Store status history in Postgres instead of only rendering live API state.
+- Add workbench-created agent runs with logs, diffs, tests, and labeled
+  checkpoints.
+- Add a RecallMEM example guide showing how to monitor a real app running on a
+  Sprite.
