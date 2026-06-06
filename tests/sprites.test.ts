@@ -3,16 +3,22 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  POST as createCheckpointRoute,
+} from "../app/api/sprites/checkpoints/route";
+import {
   DELETE as deleteFallbackToken,
   POST as saveFallbackToken,
 } from "../app/api/setup/token/route";
 import {
+  createSpriteCheckpoint,
   createSpriteApiUrl,
   createSpriteGatewayUrl,
   formatSpriteApiError,
   getDashboardData,
+  getSpriteDashboardUrl,
   getSpriteDataSource,
   getSpriteStatusGroups,
+  parseCheckpointCreateEvents,
   parseSpriteApiJson,
   selectDashboardSprite,
   type DashboardSprite,
@@ -31,6 +37,18 @@ function jsonResponse(body: unknown, init: { ok?: boolean; status?: number; stat
     status: init.status ?? 200,
     statusText: init.statusText ?? "OK",
     text: vi.fn(async () => JSON.stringify(body)),
+  };
+}
+
+function textResponse(
+  text: string,
+  init: { ok?: boolean; status?: number; statusText?: string } = {}
+) {
+  return {
+    ok: init.ok ?? true,
+    status: init.status ?? 200,
+    statusText: init.statusText ?? "OK",
+    text: vi.fn(async () => text),
   };
 }
 
@@ -98,6 +116,17 @@ describe("Sprite API helpers", () => {
     );
   });
 
+  it("builds a Sprites dashboard URL for the Sprite's org", () => {
+    expect(
+      getSpriteDashboardUrl({
+        name: "sprite-agent-workbench",
+        organization: "chris-sean-dabatos",
+      })
+    ).toBe(
+      "https://sprites.dev/account/chris-sean-dabatos?sprite=sprite-agent-workbench"
+    );
+  });
+
   it("formats JSON API errors for user-facing setup messages", () => {
     expect(
       formatSpriteApiError(
@@ -106,6 +135,56 @@ describe("Sprite API helpers", () => {
         JSON.stringify({ detail: "authentication failed" })
       )
     ).toBe("Sprites API request failed (401 Unauthorized): authentication failed");
+  });
+
+  it("parses streaming checkpoint creation events", () => {
+    const events = parseCheckpointCreateEvents(
+      [
+        "Calling API...",
+        "{\"type\":\"info\",\"data\":\"Creating checkpoint...\"}",
+        "{\"type\":\"complete\",\"data\":\"Checkpoint v8 created\"}",
+      ].join("\n")
+    );
+
+    expect(events).toEqual([
+      { type: "info", data: "Creating checkpoint..." },
+      { type: "complete", data: "Checkpoint v8 created" },
+    ]);
+  });
+
+  it("creates a checkpoint with a server-side token and parses completion", async () => {
+    vi.stubEnv("SPRITES_API_TOKEN", "token-123");
+    vi.stubEnv("SPRITES_API_BASE_URL", "https://api.test");
+    const fetchMock = vi.fn(async () =>
+      textResponse(
+        [
+          "{\"type\":\"info\",\"data\":\"Creating checkpoint...\"}",
+          "{\"type\":\"complete\",\"data\":\"Checkpoint v8 created\"}",
+        ].join("\n")
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await createSpriteCheckpoint(
+      "sprite-agent-workbench",
+      "before upgrade"
+    );
+
+    expect(result).toMatchObject({
+      checkpointId: "v8",
+      message: "Checkpoint v8 created",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      new URL("https://api.test/v1/sprites/sprite-agent-workbench/checkpoint"),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ comment: "before upgrade" }),
+        headers: expect.objectContaining({
+          authorization: "Bearer token-123",
+          "content-type": "application/json",
+        }),
+      })
+    );
   });
 
   it("selects the requested Sprite for focused checkpoint inspection", () => {
@@ -465,6 +544,79 @@ describe("setup token route", () => {
     expect(readSavedSpriteApiToken()).toBeNull();
 
     rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("checkpoint creation route", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("creates a checkpoint through a same-origin server route", async () => {
+    vi.stubEnv("SPRITES_API_TOKEN", "token-123");
+    vi.stubEnv("SPRITES_API_BASE_URL", "https://api.test");
+    const fetchMock = vi.fn(async () =>
+      textResponse(
+        [
+          "{\"type\":\"info\",\"data\":\"Creating checkpoint...\"}",
+          "{\"type\":\"complete\",\"data\":\"Checkpoint v9 created\"}",
+        ].join("\n")
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await createCheckpointRoute(
+      new Request("http://localhost/api/sprites/checkpoints", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "http://localhost",
+        },
+        body: JSON.stringify({
+          spriteName: "sprite-agent-workbench",
+          comment: "clean start",
+        }),
+      })
+    );
+    const body = (await response.json()) as {
+      checkpointId?: string;
+      message?: string;
+      ok?: boolean;
+    };
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      ok: true,
+      checkpointId: "v9",
+      message: "Checkpoint v9 created",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects checkpoint creation without a same-origin request", async () => {
+    vi.stubEnv("SPRITES_API_TOKEN", "token-123");
+    vi.stubGlobal("fetch", vi.fn());
+
+    const response = await createCheckpointRoute(
+      new Request("http://localhost/api/sprites/checkpoints", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          spriteName: "sprite-agent-workbench",
+          comment: "clean start",
+        }),
+      })
+    );
+    const body = (await response.json()) as { ok?: boolean; message?: string };
+
+    expect(response.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.message).toContain("Origin");
+    expect(fetch).not.toHaveBeenCalled();
   });
 });
 

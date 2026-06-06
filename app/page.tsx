@@ -1,6 +1,7 @@
 import {
   formatDate,
   getDashboardData,
+  getSpriteDashboardUrl,
   getSpriteStatusGroups,
   selectDashboardSprite,
   type DashboardSprite,
@@ -13,6 +14,7 @@ import {
   type SpriteAuthStatus,
 } from "@/lib/sprite-auth";
 import Link from "next/link";
+import { CheckpointCreateForm } from "./CheckpointCreateForm";
 import { SpriteCheckpointSelect } from "./SpriteCheckpointSelect";
 import { TokenFallbackForm } from "./TokenFallbackForm";
 
@@ -343,6 +345,10 @@ function CheckpointInspector({
           <span>Last running {formatDate(selectedSprite.last_running_at)}</span>
         </div>
 
+        <div className="mb-4">
+          <CheckpointCreateForm spriteName={selectedSprite.name} />
+        </div>
+
         {selectedSprite.checkpointError ? (
           <p className="rounded-2xl bg-red-950/70 p-4 text-sm text-red-100">
             {selectedSprite.checkpointError}
@@ -410,16 +416,27 @@ function SpriteCard({
             </div>
             <p className="mt-1 text-sm text-slate-500">{sprite.organization}</p>
           </div>
-          {sprite.url ? (
+          <div className="flex flex-wrap gap-2">
             <a
               className="rounded-full border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 transition hover:border-slate-950 hover:text-slate-950"
-              href={sprite.url}
+              href={getSpriteDashboardUrl(sprite)}
               target="_blank"
               rel="noreferrer"
+              title={`Open ${sprite.name} in the Sprites dashboard`}
             >
-              Open app
+              Manage in Sprites
             </a>
-          ) : null}
+            {sprite.url ? (
+              <a
+                className="rounded-full border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 transition hover:border-slate-950 hover:text-slate-950"
+                href={sprite.url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open app
+              </a>
+            ) : null}
+          </div>
         </div>
 
         <div className="mt-5 grid gap-3 sm:grid-cols-3">
