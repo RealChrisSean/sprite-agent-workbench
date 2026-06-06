@@ -1,4 +1,10 @@
 import {
+  getAgentRunTimeline,
+  type AgentRunEvent,
+  type AgentRunGroup,
+  type AgentRunTimeline,
+} from "@/lib/agent-runs";
+import {
   formatDate,
   getDashboardData,
   getSpriteDashboardUrl,
@@ -14,6 +20,7 @@ import {
   type SpriteAuthStatus,
 } from "@/lib/sprite-auth";
 import Link from "next/link";
+import { AgentRunEventForm } from "./AgentRunEventForm";
 import { CheckpointCreateForm } from "./CheckpointCreateForm";
 import { SpriteCheckpointSelect } from "./SpriteCheckpointSelect";
 import { TokenFallbackForm } from "./TokenFallbackForm";
@@ -36,6 +43,10 @@ export default async function Home({
     ? selectDashboardSprite(data.sprites, requestedSpriteName)
     : null;
   const statusGroups = data.ok ? getSpriteStatusGroups(data.sprites) : [];
+  const selectedRunTimeline =
+    data.ok && selectedSprite
+      ? await getAgentRunTimeline(selectedSprite.name)
+      : null;
 
   return (
     <main className="min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,#d9f99d_0,#f8fafc_28rem,#e5e7eb_100%)] text-slate-950">
@@ -107,10 +118,18 @@ export default async function Home({
             />
 
             {selectedSprite ? (
-              <CheckpointInspector
-                selectedSprite={selectedSprite}
-                sprites={data.sprites}
-              />
+              <>
+                <CheckpointInspector
+                  selectedSprite={selectedSprite}
+                  sprites={data.sprites}
+                />
+                {selectedRunTimeline ? (
+                  <AgentRunTimelinePanel
+                    selectedSprite={selectedSprite}
+                    timeline={selectedRunTimeline}
+                  />
+                ) : null}
+              </>
             ) : null}
 
             <section className="grid gap-5 lg:grid-cols-2">
@@ -392,6 +411,168 @@ function CheckpointListItem({
       </p>
     </li>
   );
+}
+
+function AgentRunTimelinePanel({
+  selectedSprite,
+  timeline,
+}: {
+  selectedSprite: DashboardSprite;
+  timeline: AgentRunTimeline;
+}) {
+  const latestRun = timeline.runs[0] ?? null;
+
+  return (
+    <section className="overflow-hidden rounded-[2rem] border border-white/70 bg-white/85 shadow-[0_24px_90px_rgba(15,23,42,0.10)] backdrop-blur">
+      <div className="border-b border-slate-200 p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.22em] text-slate-500">
+              Agent run timeline
+            </p>
+            <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-950">
+              What happened inside {selectedSprite.name}?
+            </h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+              This is the work-history layer: runs, commands, file changes,
+              failures, and checkpoint moments. Today it supports manual events;
+              next it can be written by an agent runner.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:min-w-72">
+            <Info label="Runs" value={String(timeline.runs.length)} />
+            <Info label="Events" value={String(timeline.events.length)} />
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-5 p-5 xl:grid-cols-[0.95fr_1.05fr]">
+        <div>
+          <AgentRunEventForm spriteName={selectedSprite.name} />
+        </div>
+
+        <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+                Latest activity
+              </p>
+              <p className="mt-2 text-lg font-black text-slate-950">
+                {latestRun ? latestRun.title : "No runs yet"}
+              </p>
+            </div>
+            {latestRun ? <RunStatusPill status={latestRun.status} /> : null}
+          </div>
+
+          {timeline.runs.length === 0 ? (
+            <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm leading-6 text-slate-600">
+              No agent run events have been recorded for this Sprite yet. Seed a
+              manual event to test the timeline, or wire an agent runner to
+              write here when it starts commands, changes files, or creates a
+              checkpoint.
+            </div>
+          ) : (
+            <ol className="mt-4 max-h-[36rem] space-y-4 overflow-y-auto pr-1">
+              {timeline.runs.map((run) => (
+                <AgentRunGroupItem key={run.runId} run={run} />
+              ))}
+            </ol>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AgentRunGroupItem({ run }: { run: AgentRunGroup }) {
+  return (
+    <li className="rounded-3xl border border-slate-200 bg-white p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="truncate text-base font-black text-slate-950">
+              {run.title}
+            </h3>
+            <RunStatusPill status={run.status} />
+          </div>
+          <p className="mt-1 truncate font-mono text-xs text-slate-500">
+            {run.runId}
+          </p>
+        </div>
+        <div className="text-right text-xs text-slate-500">
+          <p>Started {formatDate(run.startedAt)}</p>
+          <p>Updated {formatDate(run.updatedAt)}</p>
+        </div>
+      </div>
+
+      <ol className="mt-4 space-y-3 border-l border-slate-200 pl-4">
+        {run.events.map((event) => (
+          <AgentRunEventItem key={event.id} event={event} />
+        ))}
+      </ol>
+    </li>
+  );
+}
+
+function AgentRunEventItem({ event }: { event: AgentRunEvent }) {
+  return (
+    <li className="relative">
+      <span
+        className={`absolute -left-[1.35rem] top-1.5 h-3 w-3 rounded-full border-2 border-white ${getRunEventDotClass(event.status)}`}
+        aria-hidden="true"
+      />
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <p className="text-sm font-black text-slate-950">{event.label}</p>
+          <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-500">
+            {event.type.replaceAll("_", " ")}
+          </p>
+        </div>
+        <span className="text-xs text-slate-500">
+          {formatDate(event.createdAt)}
+        </span>
+      </div>
+      {event.summary ? (
+        <p className="mt-2 text-sm leading-6 text-slate-600">{event.summary}</p>
+      ) : null}
+      {Object.keys(event.metadata).length > 0 ? (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {Object.entries(event.metadata).map(([key, value]) => (
+            <span
+              key={key}
+              className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600"
+            >
+              {key}: {String(value)}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
+function RunStatusPill({ status }: { status: string }) {
+  const classes =
+    status === "success"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+      : status === "warning"
+        ? "border-amber-200 bg-amber-50 text-amber-900"
+        : status === "error"
+          ? "border-red-200 bg-red-50 text-red-900"
+          : "border-slate-200 bg-slate-100 text-slate-700";
+
+  return (
+    <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-[0.14em] ${classes}`}>
+      {status}
+    </span>
+  );
+}
+
+function getRunEventDotClass(status: string) {
+  if (status === "success") return "bg-emerald-500";
+  if (status === "warning") return "bg-amber-500";
+  if (status === "error") return "bg-red-500";
+  return "bg-slate-400";
 }
 
 function SpriteCard({

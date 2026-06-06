@@ -24,6 +24,7 @@
 .DS_Store
 *.pem
 .sprite
+.workbench-state/
 docs/DEVLOG.md
 docs/PLAN.md
 docs/TODO.md
