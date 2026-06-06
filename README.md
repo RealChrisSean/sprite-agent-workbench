@@ -2,7 +2,7 @@
 
 <img width="1474" height="846" alt="Sprite Agent Workbench dashboard showing Sprite fleet state" src="https://github.com/user-attachments/assets/335ef865-ee2c-467f-b3b5-d1e213832bad" />
 
-Sprite Agent Workbench is a visual dashboard for building with Sprites.
+Sprite Agent Workbench is a visual dashboard for building with [Sprites](https://sprites.dev).
 
 I built it because Sprites make agent work persistent, and persistent state gets hard to track fast. Once an agent can keep files, expose URLs, sleep, wake, and checkpoint itself, I want to see what it is doing without digging through commands every time.
 
