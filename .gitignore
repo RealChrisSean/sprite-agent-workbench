@@ -25,6 +25,8 @@
 *.pem
 .sprite
 docs/DEVLOG.md
+docs/PLAN.md
+docs/TODO.md
 
 # debug
 npm-debug.log*

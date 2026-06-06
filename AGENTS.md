@@ -39,9 +39,9 @@ Reference points:
 - Do not copy local Sprite CLI auth from the macOS keyring into a Sprite or into the repo.
 - If hosted live data needs auth, tell the user to create/provide a real Sprites API token and set `SPRITES_API_TOKEN` server-side.
 
-## Dev Log Requirement
+## Local Notes Requirement
 
-Update `docs/DEVLOG.md` whenever work changes behavior, deployment state, testing strategy, or reveals a new friction point.
+Update the local-only working notes when work changes behavior, deployment state, testing strategy, or reveals a new friction point.
 
 Good entries should include:
 

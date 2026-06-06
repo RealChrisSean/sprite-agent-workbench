@@ -168,12 +168,6 @@ npx tsc --noEmit
 npm run build
 ```
 
-## Project Notes
-
-- [docs/PLAN.md](docs/PLAN.md) explains the product shape.
-- [docs/TODO.md](docs/TODO.md) tracks the current roadmap.
-- [docs/TESTING.md](docs/TESTING.md) explains the test policy.
-
 ## Next
 
 - Add per-Sprite detail pages.
