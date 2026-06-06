@@ -1,70 +1,53 @@
 # Sprite Agent Workbench
 
-Sprite Agent Workbench is a visual dashboard for people building with Sprites.
+<img width="1474" height="846" alt="Screenshot 2026-06-05 at 8 20 12 PM" src="https://github.com/user-attachments/assets/335ef865-ee2c-467f-b3b5-d1e213832bad" />
 
-Sprites give agents a persistent computer: files, checkpoints, URLs, sleep/wake behavior, and state that can survive past one command. That is powerful, but it also makes the terminal a worse default interface for a lot of builders.
+Sprite Agent Workbench is a visual dashboard for building with Sprites.
 
-Advanced developers can live in the CLI. They can list Sprites, inspect logs, check checkpoints, restore state, and keep the whole system in their head. A lot of AI builders do not want that. They want to see what is running, what is asleep, which checkpoint matters, and what they can safely continue from.
+This was built because Sprites make agent work persistent, but the problem is that persistent state can get hard to track fast. Because, once an agent can keep files, expose URLs, sleep, wake, and checkpoint itself, we want to be able to see what it is doing without digging through commands every time.
 
-This app is for that layer.
-
-It does not replace the Sprites dashboard. It is a workbench you keep open while building with Sprites so fleet state, warm/cold signals, URL auth, and checkpoint history are visible in one place.
-
-RecallMEM is the first dogfood target, but this app is not hardcoded to RecallMEM. If the configured account can see a Sprite, the workbench can show it.
+This does not replace the Sprites dashboard or the Sprite CLI. It is the workbench I wanted open while building: fleet state, warm/cold signals, URL auth, and checkpoints in one place.
 
 ## Who This Is For
 
-Use this if you are building with Sprites and want a visual way to answer questions like:
+Use this if you are building with Sprites and keep asking:
 
-- Which Sprites are running?
-- Which ones are warm, cold, or unknown?
-- Why does the app think a Sprite is warm or cold?
-- Which Sprite exposes a public URL?
+- Which Sprite is running?
+- Which one is asleep?
+- Which one woke up recently?
+- Which Sprite has a public URL?
 - Which checkpoint should I trust?
-- Which Sprite should I keep working from?
-- Did my app wake slowly, or was it already warm?
+- Which one was my agent using?
 
-The goal is not to hide the terminal. The goal is to make persistent agent computers easier to inspect, especially for builders who would rather click through state than memorize another stack of commands.
+The terminal is still useful. This is for the moments where seeing the state is faster than remembering the exact command.
 
 ## What It Shows
 
-The fleet view shows:
+<img width="1352" height="366" alt="Screenshot 2026-06-05 at 8 41 47 PM" src="https://github.com/user-attachments/assets/a96400f7-d704-4026-bdec-b3a70d15fcde" />
 
-- every Sprite visible to the configured account
-- running, warm, cold, and unknown states
-- why the app thinks a Sprite is warm or cold
-- URL auth mode for each Sprite
-- last running and last warming timestamps
-- status lanes that still work with 20, 50, or 100 Sprites
+The fleet view shows every Sprite visible to the configured account, grouped by running, warm, cold, and unknown state. It also shows why the app thinks a Sprite is warm or cold, which URL auth mode it uses, and when it was last running or warming.
 
-The selected Sprite view shows:
+The selected Sprite view focuses on checkpoints. It shows the checkpoint timeline, timestamps, context, and the state you would use for a future `revert to this` action.
 
-- a focused checkpoint timeline
-- checkpoint timestamps
-- checkpoint context
-- the state you would use for a future `revert to this` action
 
-Checkpoints are only useful if you can tell what they are, when they happened, and whether they are the state you want to trust.
+## Keep The Token Out Of The Browser
 
-## The Security Rule
+The Sprites API token is the one part I do not want to get cute with. The browser should never receive the raw token. Not through `localStorage`, not through cookies, not through a URL, and not through anything prefixed with `NEXT_PUBLIC_`.
 
-The browser should never receive the raw Sprites API token.
+The dashboard needs access to Sprites, but that access belongs on the server side. The app supports a few ways to do that. The cleaner paths are listed first.
 
-Do not put the token in `localStorage`.
+Auth source priority:
 
-Do not put it in a cookie.
+1. `SPRITES_API_GATEWAY_BASE_URL`
+2. `SPRITES_API_TOKEN`
+3. saved fallback token file
+4. local `sprite` CLI
 
-Do not put it in a URL.
+The app stops at the first one it can use.
 
-Do not prefix it with `NEXT_PUBLIC_`.
+## Recommended Path: Use A Sprites Connector
 
-The dashboard needs server-side access to Sprites. There are four ways to get that access, in this order.
-
-## Best: Use A Sprites Connector
-
-Use a Sprites Connector when you can.
-
-Sprites Connectors store credentials encrypted in your organization and route requests through the Sprites gateway. The dashboard server calls the gateway. The raw token stays out of the app.
+I highly recommend that you use a Sprites Connector when you can. Because a connector keeps the raw Sprites API token out of the app and allows the token to live in your Sprites "organization", and lets the dashboard talk through the gateway instead of holding on to the token directly.
 
 Set up a Custom API connector:
 
@@ -88,36 +71,27 @@ The app appends Sprites API paths to that gateway URL:
 /v1/sprites/<name>/checkpoints
 ```
 
-This is the cleanest path because the Sprite never stores the raw API token. If you rotate the credential, you rotate it in the connector instead of touching every app environment.
+This is the path I’d rather use in production. If you rotate the credential, you rotate it in the connector. You do not have to go update every app environment that ever touched the token.
 
 Docs: [Sprites Connectors](https://docs.sprites.dev/concepts/connectors/)
 
-## Good: Use A Server Env Token
+## Simple Path: Use A Server Env Token
 
-A server env token is simpler and still reasonable for a self-hosted dashboard.
+For a self-hosted dashboard, a server env token is simpler and still reasonable.
 
 ```bash
 SPRITES_API_TOKEN=your-server-only-token
 ```
 
-The token stays on the server. The browser never receives it.
+The browser still never receives the token. The server uses it to call the Sprites API.
 
-The tradeoff is that the Sprite process now holds a long-lived token. That is less clean than a connector, but still much better than putting the token in frontend code.
+The tradeoff is that the Sprite process now holds a long-lived token. That is not as clean as a connector, but it is still much better than putting the token in frontend code.
 
-## Fallback: Paste The Token In The Dashboard
+## Fallback Path: Paste The Token Once
 
-The dashboard includes a token paste flow because setup friction is real.
+The dashboard includes a token paste flow because setup friction is real. I do not want someone blocked before they even see the app.
 
-It is not the recommended path.
-
-When you paste a token into the fallback form:
-
-- the browser sends it once to `/api/setup/token`
-- the server validates it against the Sprites API
-- the server writes it outside the repo
-- the file is created with `600` permissions
-- the token is never returned to the browser
-- the app reads it at runtime
+But again, this is still the fallback path. When you paste a token into the dashboard, the browser sends it once to `/api/setup/token`. The server validates it against the Sprites API, writes it outside the repo, creates the file with `600` permissions, and never returns the token to the browser.
 
 Default path:
 
@@ -131,13 +105,15 @@ Override path:
 SPRITE_AGENT_WORKBENCH_SECRET_PATH=/home/sprite/.sprite-agent-workbench/secrets.json
 ```
 
-The sharp edge is checkpoints. Sprites have filesystem checkpoints, so if you save a fallback token to disk and then create a checkpoint, that secret-bearing file may become part of the snapshot.
+The thing to remember is checkpoints.
 
-That is why the connector path exists. Use fallback storage only when you understand the checkpoint tradeoff.
+If you didnt know, Sprites can checkpoint their filesystem. If you save a token to disk and then checkpoint the Sprite, that secret-bearing file may become part of the snapshot. That is the tradeoff. It is also why the connector path exists.
 
-## Local Dev: Use The Sprite CLI
+Use fallback storage when you understand that cost.
 
-For local development, the fastest path is still the CLI.
+## Local Dev
+
+For local development, the Sprite CLI is the fastest path.
 
 ```bash
 sprite login
@@ -159,7 +135,7 @@ http://localhost:1340
 
 If `sprite list` works, the dashboard can fall back to `sprite api ...`.
 
-## Hosted Sprites: Listen On 8080
+## Hosted Sprites
 
 Sprites public URLs route to port `8080` by default.
 
@@ -170,17 +146,6 @@ npm start
 ```
 
 If you override the port, make sure the Sprite URL proxy can reach it. Running the app on `3000` may work inside the Sprite but fail from the public URL.
-
-## Auth Source Priority
-
-The app checks credentials in this order:
-
-1. `SPRITES_API_GATEWAY_BASE_URL`
-2. `SPRITES_API_TOKEN`
-3. saved fallback token file
-4. local `sprite` CLI
-
-The first configured source wins.
 
 ## Run The Checks
 
@@ -195,12 +160,13 @@ npm run build
 
 ## Next
 
-Planned work:
+The next useful thing is actions.
 
-- Add per-Sprite detail pages.
-- Add status history so the workbench can answer when a Sprite went cold.
-- Add safe checkpoint actions, including `revert to this`.
-- Track agent runs with commands, diffs, logs, tests, and summaries.
-- Turn this into an optional Codex skill once the product shape settles.
+Right now this is mostly inspection. This weekend I want to add safe checkpoint actions, starting with `revert to this`.
 
-If agents get persistent computers, builders need a way to inspect those computers without guessing.
+After that:
+
+- per-Sprite detail pages
+- status history, so I can see when a Sprite went cold
+- agent run tracking with commands, diffs, logs, tests, and summaries
+- an optional Codex skill once the product shape settles
