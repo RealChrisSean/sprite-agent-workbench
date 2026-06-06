@@ -146,6 +146,19 @@ http://localhost:1340
 
 If `sprite list` works, the dashboard can fall back to `sprite api ...`.
 
+## Hosted Sprites: Listen On 8080
+
+Sprites public URLs route to port `8080` by default.
+
+The production start script uses that port:
+
+```bash
+npm start
+```
+
+If you override the port, make sure the Sprite URL proxy can reach it. Running
+the app on `3000` may work inside the Sprite but fail from the public URL.
+
 ## Auth Source Priority
 
 The app checks credentials in this order:
