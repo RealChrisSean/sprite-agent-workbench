@@ -85,5 +85,6 @@ npm test
 - Before changing a running Sprite, inspect the current process state.
 - Prefer exact PIDs over broad `pkill -f` patterns when stopping remote processes.
 - After a meaningful Sprite deploy, run checks and create a checkpoint with a useful comment.
+- Do not create a checkpoint after writing secret-bearing files like `/home/sprite/app/.env.local` unless the user explicitly approves snapshotting those secrets.
 - Remember that a newly created Sprite does not automatically clone this repo.
 - Remember that hosted Sprites do not inherit local Sprite CLI auth.

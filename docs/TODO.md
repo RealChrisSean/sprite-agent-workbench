@@ -15,12 +15,24 @@ This is the working roadmap. Keep this file boring and current.
 - Add hosted `SPRITES_API_TOKEN` mode with local CLI fallback.
 - Add user-runnable `npm test` coverage for the Sprite data layer.
 - Add CI for lint, tests, typecheck, and build.
+- Add a per-Sprite checkpoint inspector so checkpoint timelines and checkpoint
+  API calls are focused on one Sprite instead of visually blending across the
+  whole fleet.
+- Add grouped running/warm/cold fleet lanes with per-Sprite tooltip evidence for
+  larger accounts.
+- Add connector-first auth setup:
+  - `SPRITES_API_GATEWAY_BASE_URL` for Sprites Connector mode.
+  - `SPRITES_API_TOKEN` for server-env token mode.
+  - server-only fallback token form with same-origin protection and scary
+    checkpoint warning.
+- Rewrite README around the secure setup model and checkpoint risk.
 
 ## Next
 
 1. Add setup docs for deploying hosted mode on a Sprite.
-   - Explain how to create a Sprites API token.
-   - Explain where to set `SPRITES_API_TOKEN`.
+   - Include the Sprites Connector path first.
+   - Explain where to set `SPRITES_API_GATEWAY_BASE_URL`.
+   - Explain where to set `SPRITES_API_TOKEN` when using env-token mode.
    - Explain that local CLI mode still works without a token.
 
 2. Add per-Sprite detail pages.

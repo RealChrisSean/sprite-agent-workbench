@@ -105,6 +105,68 @@ Important rules:
 - Added a user-runnable test suite with `npm test`.
 - Added CI for lint, tests, typecheck, and build.
 - Deployed the latest code to the `sprite-agent-workbench` Sprite.
+- Added a per-Sprite checkpoint inspector so checkpoint timelines are selected
+  by Sprite instead of visually blending every Sprite's restore points together.
+- Added grouped fleet status lanes for running, warm, cold, and unknown states
+  with per-Sprite hover evidence. This is meant to stay usable when an account
+  has 20, 50, or 100 Sprites.
+
+### Checkpoint And Fleet UI Pass
+
+The first dashboard version showed checkpoint history inside every Sprite card.
+That technically worked, but it made the mental model blurry. Checkpoints belong
+to one persistent computer. When the account grows, the dashboard needs a way to
+choose the Sprite first, then read that Sprite's restore timeline.
+
+The dashboard now has:
+
+- a checkpoint inspector with a Sprite dropdown,
+- URL-backed selection via `?sprite=...`,
+- checkpoint API calls scoped to the selected Sprite instead of every Sprite,
+- Sprite cards that show checkpoint count/latest checkpoint instead of full
+  timelines,
+- grouped fleet status lanes for running, warm, cold, and other states,
+- native tooltip evidence for each status chip,
+- and tests for focused Sprite selection plus status grouping.
+
+Friction point captured: status counts are not enough. If someone has many
+Sprites, they need the list of which exact Sprites are warm or cold, not just
+the totals. The first pass uses compact grouped chips with scrollable lanes.
+Search/filtering can come later if the fleet grows past what grouped lanes can
+comfortably show.
+
+### Connector-First Auth Setup
+
+We tightened the auth story after asking the uncomfortable question: if Sprites
+are login-gated, is it safe enough to paste a Sprites API token into the
+dashboard?
+
+Answer: login-gated is helpful, but it is not secret management.
+
+The default path is now a Sprites Custom API Connector. The connector stores the
+credential in the Sprites organization and exposes a gateway URL. The dashboard
+can call the gateway through `SPRITES_API_GATEWAY_BASE_URL` without holding the
+raw token.
+
+Auth priority is now:
+
+1. `SPRITES_API_GATEWAY_BASE_URL`
+2. `SPRITES_API_TOKEN`
+3. saved fallback token file
+4. local `sprite` CLI
+
+The fallback token form exists because setup friction is real. It is explicitly
+not the preferred path. The form:
+
+- sends the token to the server once,
+- rejects cross-origin writes,
+- validates the token against the Sprites API before saving,
+- writes outside the repo with `600` permissions,
+- never returns the token to the browser,
+- and warns that filesystem checkpoints can capture the saved secret.
+
+The README was rewritten to make this security model clear before users deploy
+the app.
 
 ### Current Deployment State
 
@@ -122,18 +184,41 @@ read live Sprite data through:
 sprite api /v1/sprites/
 ```
 
-Hosted Sprite mode runs, but live Sprite data is blocked until a real
-`SPRITES_API_TOKEN` is configured in the hosted environment.
+Local API-token mode also works after setting `SPRITES_API_TOKEN` in
+`.env.local` and restarting the Next dev server on port `1340`. Verified on
+June 5, 2026 without printing or committing the token:
 
-The hosted app currently renders the correct setup error:
-
-```txt
-Sprite data is not ready
-Check `SPRITES_API_TOKEN` on the server.
+```bash
+npm run dev -- -p 1340
+curl -I http://localhost:1340/
 ```
 
-That is expected. The Sprite itself does not inherit the developer machine's
-local Sprite CLI auth.
+The rendered page shows API token mode and the dashboard UI instead of the
+hosted-token setup error.
+
+Hosted Sprite API-token mode was configured on June 5, 2026 by writing a
+server-only `.env.local` inside `/home/sprite/app` with `600` permissions and
+restarting the remote Next server.
+
+The Sprite still does not inherit the developer machine's local Sprite CLI auth
+by magic. The hosted app works because it now has its own server-side token.
+
+Important safety note: do not create a Sprite checkpoint immediately after
+writing a secret-bearing `.env.local` unless the user explicitly wants that
+secret included in the filesystem snapshot. Future deploys should preserve this
+remote file or reapply the token after copying app files.
+
+Verified from inside the Sprite without printing the token:
+
+```bash
+curl http://localhost:3000
+```
+
+Result:
+
+- the remote app starts successfully,
+- the rendered dashboard shows API token mode,
+- and the hosted setup error no longer appears inside the Sprite runtime.
 
 ### Friction Points
 

@@ -1,5 +1,12 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import {
+  getAuthSourceLabel,
+  getSpriteAuthConfig,
+  getSpriteAuthStatus,
+  type SpriteAuthSource,
+  type SpriteAuthStatus,
+} from "./sprite-auth";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_SPRITES_API_BASE_URL = "https://api.sprites.dev";
@@ -48,7 +55,7 @@ export interface SpriteCommandError {
   hint: string;
 }
 
-export type SpriteDataSource = "token" | "cli";
+export type SpriteDataSource = SpriteAuthSource;
 
 export interface DashboardSprite extends SpriteSummary {
   checkpoints: SpriteCheckpoint[];
@@ -70,6 +77,7 @@ export interface DashboardData {
     warmLimit: number | null;
   };
   sprites: DashboardSprite[];
+  auth: SpriteAuthStatus;
   error?: SpriteCommandError;
   fetchedAt: string;
 }
@@ -86,16 +94,51 @@ export interface HealthCheckResult {
   detail: string;
 }
 
+export interface SpriteStatusGroup<T extends Pick<SpriteSummary, "status">> {
+  key: "running" | "warm" | "cold" | "other";
+  label: string;
+  detail: string;
+  sprites: T[];
+}
+
 async function runSpriteApi<T>(path: string): Promise<T> {
-  const token = getSpriteApiToken();
-  if (token) {
-    return runSpriteApiWithToken<T>(path, token);
+  const auth = getSpriteAuthConfig();
+  if (auth.source === "connector" && auth.gatewayBaseUrl) {
+    return runSpriteApiWithGateway<T>(path, auth.gatewayBaseUrl);
+  }
+
+  if (
+    (auth.source === "token" || auth.source === "saved-token") &&
+    auth.token
+  ) {
+    return runSpriteApiWithToken<T>(path, auth.token);
   }
 
   const { stdout } = await execFileAsync("sprite", ["api", path], {
     maxBuffer: 1024 * 1024 * 5,
   });
   return parseSpriteApiJson<T>(stdout);
+}
+
+async function runSpriteApiWithGateway<T>(
+  path: string,
+  gatewayBaseUrl: string
+): Promise<T> {
+  const url = createSpriteGatewayUrl(path, gatewayBaseUrl);
+  const res = await fetch(url, {
+    headers: {
+      accept: "application/json",
+    },
+    cache: "no-store",
+    signal: AbortSignal.timeout(10_000),
+  });
+  const text = await res.text();
+
+  if (!res.ok) {
+    throw new Error(formatSpriteApiError(res.status, res.statusText, text));
+  }
+
+  return JSON.parse(text) as T;
 }
 
 async function runSpriteApiWithToken<T>(
@@ -126,6 +169,12 @@ export function createSpriteApiUrl(path: string, baseUrl: string): URL {
   return new URL(path, baseUrl);
 }
 
+export function createSpriteGatewayUrl(path: string, gatewayBaseUrl: string): URL {
+  const cleanBase = gatewayBaseUrl.replace(/\/+$/, "");
+  const cleanPath = path.replace(/^\/+/, "");
+  return new URL(`${cleanBase}/${cleanPath}`);
+}
+
 export function formatSpriteApiError(
   status: number,
   statusText: string,
@@ -154,15 +203,29 @@ export function parseSpriteApiJson<T>(output: string): T {
   return JSON.parse(output.slice(start)) as T;
 }
 
-export async function getDashboardData(): Promise<DashboardData> {
+export async function getDashboardData(
+  checkpointSpriteName?: string | null
+): Promise<DashboardData> {
   const fetchedAt = new Date().toISOString();
   const source = getSpriteDataSource();
+  const auth = getSpriteAuthStatus();
   try {
     const list = await runSpriteApi<SpriteListResponse>("/v1/sprites/");
+    const selectedCheckpointSpriteName =
+      list.sprites.find((sprite) => sprite.name === checkpointSpriteName)?.name ??
+      list.sprites[0]?.name ??
+      null;
     const sprites = await Promise.all(
       list.sprites.map(async (sprite) => {
+        const checkpointRequest: Promise<{
+          items: SpriteCheckpoint[];
+          error?: string;
+        }> =
+          sprite.name === selectedCheckpointSpriteName
+            ? getCheckpoints(sprite.name)
+            : Promise.resolve({ items: [] });
         const [checkpoints, health] = await Promise.all([
-          getCheckpoints(sprite.name),
+          checkpointRequest,
           checkSpriteHealth(sprite),
         ]);
 
@@ -189,6 +252,7 @@ export async function getDashboardData(): Promise<DashboardData> {
         warmLimit: list.warm_limit,
       },
       sprites,
+      auth,
       fetchedAt,
     };
   } catch (err) {
@@ -205,24 +269,83 @@ export async function getDashboardData(): Promise<DashboardData> {
         warmLimit: null,
       },
       sprites: [],
+      auth,
       fetchedAt,
       error: {
         message: err instanceof Error ? err.message : String(err),
-        hint:
-          source === "token"
-            ? "Check `SPRITES_API_TOKEN` on the server. If this is hosted on a Sprite, set it as an environment secret and restart the app."
-            : "Run `sprite login` in your terminal, or set `SPRITES_API_TOKEN` for hosted mode, then refresh this dashboard.",
+        hint: getSetupHint(source),
       },
     };
   }
 }
 
 export function getSpriteDataSource(): SpriteDataSource {
-  return getSpriteApiToken() ? "token" : "cli";
+  return getSpriteAuthConfig().source;
 }
 
-function getSpriteApiToken(): string | null {
-  return process.env.SPRITES_API_TOKEN?.trim() || null;
+export async function validateSpritesApiToken(token: string): Promise<void> {
+  await runSpriteApiWithToken<SpriteListResponse>("/v1/sprites/", token);
+}
+
+export function selectDashboardSprite(
+  sprites: DashboardSprite[],
+  requestedName: string | null
+): DashboardSprite | null {
+  if (sprites.length === 0) return null;
+  if (!requestedName) return sprites[0];
+  return (
+    sprites.find((sprite) => sprite.name === requestedName) ?? sprites[0]
+  );
+}
+
+export function getSpriteStatusGroups<T extends Pick<SpriteSummary, "status">>(
+  sprites: T[]
+): SpriteStatusGroup<T>[] {
+  const running: T[] = [];
+  const warm: T[] = [];
+  const cold: T[] = [];
+  const other: T[] = [];
+
+  for (const sprite of sprites) {
+    if (sprite.status === "running") {
+      running.push(sprite);
+    } else if (sprite.status === "warm") {
+      warm.push(sprite);
+    } else if (sprite.status === "cold") {
+      cold.push(sprite);
+    } else {
+      other.push(sprite);
+    }
+  }
+
+  const groups: SpriteStatusGroup<T>[] = [
+    {
+      key: "running",
+      label: "Running",
+      detail: "Active now",
+      sprites: running,
+    },
+    {
+      key: "warm",
+      label: "Warm",
+      detail: "Recently touched",
+      sprites: warm,
+    },
+    {
+      key: "cold",
+      label: "Cold",
+      detail: "Idle or asleep",
+      sprites: cold,
+    },
+    {
+      key: "other",
+      label: "Other",
+      detail: "Unknown status",
+      sprites: other,
+    },
+  ];
+
+  return groups.filter((group) => group.sprites.length > 0);
 }
 
 async function getCheckpoints(
@@ -358,4 +481,20 @@ export function formatRelativeTime(value: string | null): string | null {
   if (abs < hour) return formatter.format(Math.round(-diffMs / minute), "minute");
   if (abs < day) return formatter.format(Math.round(-diffMs / hour), "hour");
   return formatter.format(Math.round(-diffMs / day), "day");
+}
+
+function getSetupHint(source: SpriteDataSource): string {
+  if (source === "connector") {
+    return "Check `SPRITES_API_GATEWAY_BASE_URL`, then confirm the connector access policy grants this Sprite access to the Sprites API connector.";
+  }
+
+  if (source === "token") {
+    return "Check `SPRITES_API_TOKEN` on the server. It must stay server-only and must not use `NEXT_PUBLIC_`.";
+  }
+
+  if (source === "saved-token") {
+    return "The saved fallback token did not work. Replace or delete it from the setup panel, then prefer a Sprites Connector for long-term use.";
+  }
+
+  return `No server credential is configured. Recommended: use a Sprites Connector. Current source: ${getAuthSourceLabel(source)}.`;
 }
