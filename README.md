@@ -173,8 +173,6 @@ npm run build
 - [docs/PLAN.md](docs/PLAN.md) explains the product shape.
 - [docs/TODO.md](docs/TODO.md) tracks the current roadmap.
 - [docs/TESTING.md](docs/TESTING.md) explains the test policy.
-- [docs/DEVLOG.md](docs/DEVLOG.md) keeps the scar tissue: deployment notes,
-  auth friction, checkpoint gotchas, and decisions we do not want to rediscover.
 
 ## Next
 
