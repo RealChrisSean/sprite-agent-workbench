@@ -24,6 +24,7 @@
 .DS_Store
 *.pem
 .sprite
+docs/DEVLOG.md
 
 # debug
 npm-debug.log*
