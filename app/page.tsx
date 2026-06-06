@@ -1,5 +1,6 @@
 import {
   getAgentRunTimeline,
+  getCheckpointContextEvents,
   type AgentRunEvent,
   type AgentRunGroup,
   type AgentRunTimeline,
@@ -122,6 +123,7 @@ export default async function Home({
                 <CheckpointInspector
                   selectedSprite={selectedSprite}
                   sprites={data.sprites}
+                  timeline={selectedRunTimeline}
                 />
                 {selectedRunTimeline ? (
                   <AgentRunTimelinePanel
@@ -327,9 +329,11 @@ function FleetStatusPanel({
 function CheckpointInspector({
   selectedSprite,
   sprites,
+  timeline,
 }: {
   selectedSprite: DashboardSprite;
   sprites: DashboardSprite[];
+  timeline: AgentRunTimeline | null;
 }) {
   return (
     <section className="overflow-hidden rounded-[2rem] border border-white/70 bg-slate-950 text-slate-100 shadow-[0_24px_90px_rgba(15,23,42,0.20)]">
@@ -382,6 +386,11 @@ function CheckpointInspector({
               <CheckpointListItem
                 key={`${selectedSprite.name}-${checkpoint.id}`}
                 checkpoint={checkpoint}
+                contextEvents={
+                  timeline
+                    ? getCheckpointContextEvents(timeline.events, checkpoint.id)
+                    : []
+                }
               />
             ))}
           </ol>
@@ -393,8 +402,10 @@ function CheckpointInspector({
 
 function CheckpointListItem({
   checkpoint,
+  contextEvents,
 }: {
   checkpoint: SpriteCheckpoint;
+  contextEvents: AgentRunEvent[];
 }) {
   return (
     <li className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
@@ -409,6 +420,36 @@ function CheckpointListItem({
       <p className="mt-2 text-sm text-slate-300">
         {checkpoint.comment || "No comment"}
       </p>
+      <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950 p-3">
+        <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+          Known context
+        </p>
+        {contextEvents.length === 0 ? (
+          <p className="mt-2 text-sm leading-6 text-slate-500">
+            No linked Workbench timeline event yet. Sprites gives us the
+            restore point; Workbench adds the explanation when it creates or
+            observes the work around it.
+          </p>
+        ) : (
+          <ol className="mt-3 space-y-3">
+            {contextEvents.map((event) => (
+              <li key={event.id} className="text-sm leading-6 text-slate-300">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-bold text-lime-100">
+                    {event.label}
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    {formatDate(event.createdAt)}
+                  </span>
+                </div>
+                {event.summary ? (
+                  <p className="mt-1 text-slate-400">{event.summary}</p>
+                ) : null}
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
     </li>
   );
 }

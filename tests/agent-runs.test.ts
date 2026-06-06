@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { POST as createRunEventRoute } from "../app/api/runs/events/route";
 import {
+  buildCheckpointCreatedEventInput,
+  getCheckpointContextEvents,
   getAgentRunTimeline,
   readAgentRunEventsForSprite,
   recordAgentRunEvent,
@@ -97,6 +99,59 @@ describe("agent run event storage", () => {
         runId: "not a safe run id",
       })
     ).toThrow("Run id");
+  });
+
+  it("builds checkpoint context without duplicating raw comments", () => {
+    const input = buildCheckpointCreatedEventInput({
+      spriteName: "sprite-agent-workbench",
+      checkpointId: "v9",
+      comment: "before risky deploy",
+      message: "Checkpoint v9 created",
+    });
+    const event = validateAgentRunEventInput(
+      input,
+      new Date("2026-06-06T12:00:00Z")
+    );
+
+    expect(event).toMatchObject({
+      type: "checkpoint_created",
+      label: "Checkpoint v9 created",
+      summary: "Created from Sprite Agent Workbench with a checkpoint comment.",
+      status: "success",
+      metadata: {
+        checkpoint_id: "v9",
+        source: "workbench",
+        has_comment: true,
+      },
+    });
+    expect(event.summary).not.toContain("before risky deploy");
+  });
+
+  it("returns context events linked to a specific checkpoint id", async () => {
+    useRunEventFile();
+
+    const linked = await recordAgentRunEvent(
+      buildCheckpointCreatedEventInput({
+        spriteName: "sprite-agent-workbench",
+        checkpointId: "v9",
+        comment: null,
+        message: "Checkpoint v9 created",
+      }),
+      new Date("2026-06-06T12:00:00Z")
+    );
+    await recordAgentRunEvent(
+      buildCheckpointCreatedEventInput({
+        spriteName: "sprite-agent-workbench",
+        checkpointId: "v8",
+        comment: null,
+        message: "Checkpoint v8 created",
+      }),
+      new Date("2026-06-06T12:01:00Z")
+    );
+    const events = await readAgentRunEventsForSprite("sprite-agent-workbench");
+
+    expect(getCheckpointContextEvents(events, "v9")).toEqual([linked]);
+    expect(getCheckpointContextEvents(events, "missing")).toEqual([]);
   });
 });
 

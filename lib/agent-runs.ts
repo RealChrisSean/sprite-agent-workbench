@@ -212,6 +212,49 @@ export function groupAgentRunEvents(events: AgentRunEvent[]): AgentRunGroup[] {
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
+export function getCheckpointContextEvents(
+  events: AgentRunEvent[],
+  checkpointId: string,
+  limit = 4
+): AgentRunEvent[] {
+  return events
+    .filter((event) => event.metadata.checkpoint_id === checkpointId)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, Math.max(1, limit));
+}
+
+export function buildCheckpointCreatedEventInput({
+  spriteName,
+  checkpointId,
+  comment,
+  message,
+}: {
+  spriteName: string;
+  checkpointId: string | null;
+  comment?: string | null;
+  message?: string | null;
+}): AgentRunEventInput {
+  const label = checkpointId
+    ? `Checkpoint ${checkpointId} created`
+    : "Checkpoint created";
+  const normalizedComment = comment?.trim();
+
+  return {
+    spriteName,
+    type: "checkpoint_created",
+    label,
+    summary: normalizedComment
+      ? "Created from Sprite Agent Workbench with a checkpoint comment."
+      : message || "Created from Sprite Agent Workbench.",
+    status: "success",
+    metadata: {
+      checkpoint_id: checkpointId || "unknown",
+      source: "workbench",
+      has_comment: Boolean(normalizedComment),
+    },
+  };
+}
+
 function validateEventType(value: unknown): AgentRunEventType {
   if (typeof value !== "string") {
     throw new Error("Event type is required.");

@@ -23,6 +23,7 @@ import {
   selectDashboardSprite,
   type DashboardSprite,
 } from "../lib/sprites";
+import { readAgentRunEventsForSprite } from "../lib/agent-runs";
 import {
   deleteSavedSpriteApiToken,
   getSpriteAuthStatus,
@@ -555,6 +556,11 @@ describe("checkpoint creation route", () => {
   });
 
   it("creates a checkpoint through a same-origin server route", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "sprite-workbench-checkpoint-test-"));
+    vi.stubEnv(
+      "SPRITE_AGENT_WORKBENCH_RUN_EVENTS_PATH",
+      join(dir, "run-events.jsonl")
+    );
     vi.stubEnv("SPRITES_API_TOKEN", "token-123");
     vi.stubEnv("SPRITES_API_BASE_URL", "https://api.test");
     const fetchMock = vi.fn(async () =>
@@ -584,15 +590,34 @@ describe("checkpoint creation route", () => {
       checkpointId?: string;
       message?: string;
       ok?: boolean;
+      runEventId?: string | null;
+      runEventError?: string | null;
     };
+    const runEvents = await readAgentRunEventsForSprite(
+      "sprite-agent-workbench"
+    );
 
     expect(response.status).toBe(200);
     expect(body).toMatchObject({
       ok: true,
       checkpointId: "v9",
       message: "Checkpoint v9 created",
+      runEventError: null,
+    });
+    expect(body.runEventId).toEqual(expect.any(String));
+    expect(runEvents).toHaveLength(1);
+    expect(runEvents[0]).toMatchObject({
+      type: "checkpoint_created",
+      label: "Checkpoint v9 created",
+      metadata: {
+        checkpoint_id: "v9",
+        source: "workbench",
+        has_comment: true,
+      },
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    rmSync(dir, { recursive: true, force: true });
   });
 
   it("rejects checkpoint creation without a same-origin request", async () => {
