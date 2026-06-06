@@ -44,7 +44,8 @@ Auth source priority:
 
 The app stops at the first one it can use.
 
-## Recommended Path: Use A Sprites Connector
+<details>
+<summary><b>Recommended Path: Use A Sprites Connector</b></summary>
 
 I’d use a Sprites Connector when you can.
 
@@ -76,7 +77,10 @@ This is the path I’d rather use in production. If you rotate the credential, y
 
 Docs: [Sprites Connectors](https://docs.sprites.dev/concepts/connectors/)
 
-## Simple Path: Use A Server Env Token
+</details>
+
+<details>
+<summary><b>Simple Path: Use A Server Env Token</b></summary>
 
 For a self-hosted dashboard, a server env token is simpler and still reasonable.
 
@@ -88,7 +92,10 @@ The browser still never receives the token. The server uses it to call the Sprit
 
 The tradeoff is that the Sprite process now holds a long-lived token. That is not as clean as a connector, but it is still much better than putting the token in frontend code.
 
-## Fallback Path: Paste The Token Once
+</details>
+
+<details>
+<summary><b>Fallback Path: Paste The Token Once</b></summary>
 
 The dashboard includes a token paste flow because setup friction is real. I do not want someone blocked before they even see the app.
 
@@ -111,6 +118,8 @@ The thing to remember is checkpoints.
 Sprites can checkpoint their filesystem. If you save a token to disk and then checkpoint the Sprite, that secret-bearing file may become part of the snapshot. That is the tradeoff. It is also why the connector path exists.
 
 Use fallback storage when you understand that cost.
+
+</details>
 
 ## Local Dev
 
