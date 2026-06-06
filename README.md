@@ -1,10 +1,10 @@
 # Sprite Agent Workbench
 
-<img width="1474" height="846" alt="Screenshot 2026-06-05 at 8 20 12 PM" src="https://github.com/user-attachments/assets/335ef865-ee2c-467f-b3b5-d1e213832bad" />
+<img width="1474" height="846" alt="Sprite Agent Workbench dashboard showing Sprite fleet state" src="https://github.com/user-attachments/assets/335ef865-ee2c-467f-b3b5-d1e213832bad" />
 
 Sprite Agent Workbench is a visual dashboard for building with Sprites.
 
-This was built because Sprites make agent work persistent, but the problem is that persistent state can get hard to track fast. Because, once an agent can keep files, expose URLs, sleep, wake, and checkpoint itself, we want to be able to see what it is doing without digging through commands every time.
+I built it because Sprites make agent work persistent, and persistent state gets hard to track fast. Once an agent can keep files, expose URLs, sleep, wake, and checkpoint itself, I want to see what it is doing without digging through commands every time.
 
 This does not replace the Sprites dashboard or the Sprite CLI. It is the workbench I wanted open while building: fleet state, warm/cold signals, URL auth, and checkpoints in one place.
 
@@ -23,12 +23,11 @@ The terminal is still useful. This is for the moments where seeing the state is 
 
 ## What It Shows
 
-<img width="1352" height="366" alt="Screenshot 2026-06-05 at 8 41 47 PM" src="https://github.com/user-attachments/assets/a96400f7-d704-4026-bdec-b3a70d15fcde" />
+<img width="1352" height="366" alt="Sprite Agent Workbench fleet view showing warm, cold, running, and unknown Sprite lanes" src="https://github.com/user-attachments/assets/a96400f7-d704-4026-bdec-b3a70d15fcde" />
 
 The fleet view shows every Sprite visible to the configured account, grouped by running, warm, cold, and unknown state. It also shows why the app thinks a Sprite is warm or cold, which URL auth mode it uses, and when it was last running or warming.
 
 The selected Sprite view focuses on checkpoints. It shows the checkpoint timeline, timestamps, context, and the state you would use for a future `revert to this` action.
-
 
 ## Keep The Token Out Of The Browser
 
@@ -47,7 +46,9 @@ The app stops at the first one it can use.
 
 ## Recommended Path: Use A Sprites Connector
 
-I highly recommend that you use a Sprites Connector when you can. Because a connector keeps the raw Sprites API token out of the app and allows the token to live in your Sprites "organization", and lets the dashboard talk through the gateway instead of holding on to the token directly.
+I’d use a Sprites Connector when you can.
+
+A connector keeps the raw Sprites API token out of the app. The credential lives in your Sprites organization, and the dashboard talks through the gateway instead of holding the token directly.
 
 Set up a Custom API connector:
 
@@ -107,7 +108,7 @@ SPRITE_AGENT_WORKBENCH_SECRET_PATH=/home/sprite/.sprite-agent-workbench/secrets.
 
 The thing to remember is checkpoints.
 
-If you didnt know, Sprites can checkpoint their filesystem. If you save a token to disk and then checkpoint the Sprite, that secret-bearing file may become part of the snapshot. That is the tradeoff. It is also why the connector path exists.
+Sprites can checkpoint their filesystem. If you save a token to disk and then checkpoint the Sprite, that secret-bearing file may become part of the snapshot. That is the tradeoff. It is also why the connector path exists.
 
 Use fallback storage when you understand that cost.
 
