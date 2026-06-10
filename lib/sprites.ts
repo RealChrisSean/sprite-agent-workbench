@@ -7,6 +7,11 @@ import {
   type SpriteAuthSource,
   type SpriteAuthStatus,
 } from "./sprite-auth";
+import {
+  buildCostExposureSummary,
+  observeCostExposure,
+  type CostExposureSummary,
+} from "./cost-ledger";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_SPRITES_API_BASE_URL = "https://api.sprites.dev";
@@ -74,6 +79,7 @@ export type SpriteDataSource = SpriteAuthSource;
 
 export interface DashboardSprite extends SpriteSummary {
   checkpoints: SpriteCheckpoint[];
+  checkpointCountLoaded: boolean;
   sleep: SleepInference;
   health: HealthCheckResult;
   checkpointError?: string;
@@ -92,6 +98,7 @@ export interface DashboardData {
     warmLimit: number | null;
   };
   sprites: DashboardSprite[];
+  costExposure: CostExposureSummary | null;
   auth: SpriteAuthStatus;
   error?: SpriteCommandError;
   fetchedAt: string;
@@ -479,7 +486,8 @@ function parseCheckpointId(message: string): string | null {
 export async function getDashboardData(
   checkpointSpriteName?: string | null
 ): Promise<DashboardData> {
-  const fetchedAt = new Date().toISOString();
+  const fetchedAtDate = new Date();
+  const fetchedAt = fetchedAtDate.toISOString();
   const source = getSpriteDataSource();
   const auth = getSpriteAuthStatus();
   try {
@@ -505,12 +513,18 @@ export async function getDashboardData(
         return {
           ...sprite,
           checkpoints: checkpoints.items,
+          checkpointCountLoaded: sprite.name === selectedCheckpointSpriteName,
           checkpointError: checkpoints.error,
           health,
           sleep: inferSleep(sprite, health),
         };
       })
     );
+    const costExposure = await observeCostExposure({
+      sprites,
+      source,
+      observedAt: fetchedAtDate,
+    });
 
     return {
       ok: true,
@@ -525,6 +539,7 @@ export async function getDashboardData(
         warmLimit: list.warm_limit,
       },
       sprites,
+      costExposure,
       auth,
       fetchedAt,
     };
@@ -542,6 +557,12 @@ export async function getDashboardData(
         warmLimit: null,
       },
       sprites: [],
+      costExposure: buildCostExposureSummary({
+        observations: [],
+        currentObservations: [],
+        now: fetchedAtDate,
+        writeError: null,
+      }),
       auth,
       fetchedAt,
       error: {

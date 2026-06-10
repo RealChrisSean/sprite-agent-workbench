@@ -32,6 +32,14 @@ import {
   validateTokenInput,
 } from "../lib/sprite-auth";
 
+const tempDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 function jsonResponse(body: unknown, init: { ok?: boolean; status?: number; statusText?: string } = {}) {
   return {
     ok: init.ok ?? true,
@@ -234,6 +242,7 @@ describe("getDashboardData", () => {
   });
 
   it("uses hosted token mode and fetches checkpoints without touching auth-gated app URLs", async () => {
+    useObservationFile();
     vi.stubEnv("SPRITES_API_TOKEN", "token-123");
     vi.stubEnv("SPRITES_API_BASE_URL", "https://api.test");
 
@@ -294,6 +303,8 @@ describe("getDashboardData", () => {
     expect(data.sprites[0].name).toBe("recallmem");
     expect(data.sprites[0].health.label).toBe("Auth gated");
     expect(data.sprites[0].checkpoints).toHaveLength(1);
+    expect(data.costExposure?.activeNow).toBe(0);
+    expect(data.costExposure?.observationCount).toBe(1);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[0][1]).toMatchObject({
       headers: {
@@ -304,6 +315,7 @@ describe("getDashboardData", () => {
   });
 
   it("uses connector mode without sending an Authorization header", async () => {
+    useObservationFile();
     vi.stubEnv(
       "SPRITES_API_GATEWAY_BASE_URL",
       "https://api.test/v1/gateway/custom_api/conn_123"
@@ -343,12 +355,14 @@ describe("getDashboardData", () => {
 
     expect(data.ok).toBe(true);
     expect(data.source).toBe("connector");
+    expect(data.costExposure?.warmNow).toBe(1);
     expect(fetchMock.mock.calls[0][1]?.headers).not.toHaveProperty(
       "authorization"
     );
   });
 
   it("fetches checkpoint history only for the selected Sprite", async () => {
+    useObservationFile();
     vi.stubEnv("SPRITES_API_TOKEN", "token-123");
     vi.stubEnv("SPRITES_API_BASE_URL", "https://api.test");
 
@@ -399,6 +413,15 @@ describe("getDashboardData", () => {
       data.sprites.find((sprite) => sprite.name === "sprite-agent-workbench")
         ?.checkpoints
     ).toHaveLength(1);
+    expect(
+      data.sprites.find((sprite) => sprite.name === "sprite-agent-workbench")
+        ?.checkpointCountLoaded
+    ).toBe(true);
+    expect(
+      data.sprites.find((sprite) => sprite.name === "recallmem")
+        ?.checkpointCountLoaded
+    ).toBe(false);
+    expect(data.costExposure?.runningNow).toBe(1);
     expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
       "https://api.test/v1/sprites/",
       "https://api.test/v1/sprites/sprite-agent-workbench/checkpoints",
@@ -652,6 +675,7 @@ function makeDashboardSprite(
   return {
     ...makeSpriteSummary(name, status),
     checkpoints: [],
+    checkpointCountLoaded: false,
     health: {
       status: "skipped",
       label: "No URL",
@@ -663,6 +687,15 @@ function makeDashboardSprite(
       evidence: [`status: ${status}`],
     },
   };
+}
+
+function useObservationFile() {
+  const dir = mkdtempSync(join(tmpdir(), "sprite-workbench-observations-test-"));
+  tempDirs.push(dir);
+  vi.stubEnv(
+    "SPRITE_AGENT_WORKBENCH_OBSERVATIONS_PATH",
+    join(dir, "observations.jsonl")
+  );
 }
 
 function makeSpriteSummary(name: string, status: string) {
