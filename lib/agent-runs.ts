@@ -283,10 +283,12 @@ export function buildRestorePerformedEventInput({
   spriteName,
   checkpointId,
   message,
+  safetyCheckpointId,
 }: {
   spriteName: string;
   checkpointId: string;
   message?: string | null;
+  safetyCheckpointId?: string | null;
 }): AgentRunEventInput {
   return {
     spriteName,
@@ -298,6 +300,9 @@ export function buildRestorePerformedEventInput({
       checkpoint_id: checkpointId,
       restored_checkpoint_id: checkpointId,
       source: "workbench",
+      ...(safetyCheckpointId
+        ? { safety_checkpoint_id: safetyCheckpointId }
+        : {}),
     },
   };
 }

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { POST as createRunEventRoute } from "../app/api/runs/events/route";
 import {
   buildCheckpointCreatedEventInput,
+  buildRestorePerformedEventInput,
   getCheckpointContextEvents,
   getAgentRunTimeline,
   readAgentRunEventsForSprite,
@@ -188,6 +189,36 @@ describe("agent run event storage", () => {
       },
     });
     expect(event.summary).not.toContain("before risky deploy");
+  });
+
+  it("links the safety checkpoint id on restore events when one was created", () => {
+    const withSafety = validateAgentRunEventInput(
+      buildRestorePerformedEventInput({
+        spriteName: "sprite-agent-workbench",
+        checkpointId: "v3",
+        message: "Restored to v3",
+        safetyCheckpointId: "v9",
+      }),
+      new Date("2026-06-10T12:00:00Z")
+    );
+
+    expect(withSafety.metadata).toMatchObject({
+      restored_checkpoint_id: "v3",
+      safety_checkpoint_id: "v9",
+      source: "workbench",
+    });
+
+    const withoutSafety = validateAgentRunEventInput(
+      buildRestorePerformedEventInput({
+        spriteName: "sprite-agent-workbench",
+        checkpointId: "v3",
+        message: "Restored to v3",
+        safetyCheckpointId: null,
+      }),
+      new Date("2026-06-10T12:00:00Z")
+    );
+
+    expect(withoutSafety.metadata).not.toHaveProperty("safety_checkpoint_id");
   });
 
   it("returns context events linked to a specific checkpoint id", async () => {

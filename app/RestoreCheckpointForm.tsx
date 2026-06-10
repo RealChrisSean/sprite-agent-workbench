@@ -13,6 +13,7 @@ export function RestoreCheckpointForm({
   const router = useRouter();
   const [confirmSpriteName, setConfirmSpriteName] = useState("");
   const [acknowledgeOverwrite, setAcknowledgeOverwrite] = useState(false);
+  const [createSafetyCheckpoint, setCreateSafetyCheckpoint] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -33,10 +34,12 @@ export function RestoreCheckpointForm({
           checkpointId,
           confirmSpriteName,
           acknowledgeOverwrite,
+          createSafetyCheckpoint,
         }),
       });
       const body = (await res.json()) as {
         checkpointId?: string | null;
+        safetyCheckpointId?: string | null;
         message?: string;
       };
 
@@ -46,11 +49,13 @@ export function RestoreCheckpointForm({
 
       setConfirmSpriteName("");
       setAcknowledgeOverwrite(false);
-      setMessage(
-        body.checkpointId
-          ? `Restored to ${body.checkpointId}. Refreshing timeline...`
-          : `${body.message || "Checkpoint restored."} Refreshing timeline...`
-      );
+      const restoredText = body.checkpointId
+        ? `Restored to ${body.checkpointId}.`
+        : body.message || "Checkpoint restored.";
+      const safetyText = body.safetyCheckpointId
+        ? ` Safety checkpoint ${body.safetyCheckpointId} holds the previous state.`
+        : "";
+      setMessage(`${restoredText}${safetyText} Refreshing timeline...`);
       startTransition(() => router.refresh());
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -72,9 +77,29 @@ export function RestoreCheckpointForm({
         <p className="rounded-2xl border border-red-900/60 bg-red-950/60 p-3 text-xs leading-5 text-red-100">
           This will restore <span className="font-mono">{spriteName}</span> to{" "}
           <span className="font-mono">{checkpointId}</span>. Current filesystem
-          changes after that checkpoint can be lost. Workbench will record an
-          audit event, but it will not create a safety checkpoint first.
+          changes after that checkpoint can be lost. Workbench records an
+          audit event for every restore.
         </p>
+
+        <label className="flex items-start gap-3 rounded-2xl border border-slate-700 bg-slate-950 p-3 text-xs leading-5 text-slate-200">
+          <input
+            className="mt-1 h-4 w-4 accent-lime-400"
+            checked={createSafetyCheckpoint}
+            type="checkbox"
+            onChange={(event) =>
+              setCreateSafetyCheckpoint(event.currentTarget.checked)
+            }
+          />
+          <span>
+            <span className="font-bold">
+              Create a safety checkpoint first (recommended).
+            </span>{" "}
+            Snapshots the current state so this restore can be undone. The
+            snapshot captures the Sprite&apos;s entire filesystem, including
+            any secret-bearing files currently on it (for example
+            `.env.local`).
+          </span>
+        </label>
 
         <label className="block">
           <span className="text-xs font-bold uppercase tracking-[0.18em] text-red-200/80">
