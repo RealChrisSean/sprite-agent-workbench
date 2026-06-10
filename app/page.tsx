@@ -29,6 +29,7 @@ import {
 import { AgentRunEventForm } from "./AgentRunEventForm";
 import { CheckpointCreateForm } from "./CheckpointCreateForm";
 import { RefreshButton } from "./RefreshButton";
+import { RestoreCheckpointForm } from "./RestoreCheckpointForm";
 import { SpriteCheckpointSelect } from "./SpriteCheckpointSelect";
 import { TokenFallbackForm } from "./TokenFallbackForm";
 
@@ -556,6 +557,7 @@ function CheckpointInspector({
             {selectedSprite.checkpoints.map((checkpoint) => (
               <CheckpointListItem
                 key={`${selectedSprite.name}-${checkpoint.id}`}
+                spriteName={selectedSprite.name}
                 checkpoint={checkpoint}
                 contextEvents={
                   timeline
@@ -572,9 +574,11 @@ function CheckpointInspector({
 }
 
 function CheckpointListItem({
+  spriteName,
   checkpoint,
   contextEvents,
 }: {
+  spriteName: string;
   checkpoint: SpriteCheckpoint;
   contextEvents: AgentRunEvent[];
 }) {
@@ -624,6 +628,10 @@ function CheckpointListItem({
           </ol>
         )}
       </div>
+      <RestoreCheckpointForm
+        spriteName={spriteName}
+        checkpointId={checkpoint.id}
+      />
     </li>
   );
 }

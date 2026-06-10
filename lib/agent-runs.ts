@@ -6,6 +6,7 @@ import { validateSpriteNameInput } from "./sprites";
 export const AGENT_RUN_EVENT_TYPES = [
   "run_started",
   "checkpoint_created",
+  "restore_performed",
   "command_started",
   "command_finished",
   "file_changed",
@@ -31,6 +32,7 @@ export type AgentRunFileStatus = "A" | "M" | "D";
 export const AGENT_RUN_EVENT_TYPE_LABELS: Record<AgentRunEventType, string> = {
   run_started: "Run started",
   checkpoint_created: "Checkpoint created",
+  restore_performed: "Restore performed",
   command_started: "Command started",
   command_finished: "Command finished",
   file_changed: "File changed",
@@ -277,6 +279,29 @@ export function buildCheckpointCreatedEventInput({
   };
 }
 
+export function buildRestorePerformedEventInput({
+  spriteName,
+  checkpointId,
+  message,
+}: {
+  spriteName: string;
+  checkpointId: string;
+  message?: string | null;
+}): AgentRunEventInput {
+  return {
+    spriteName,
+    type: "restore_performed",
+    label: `Restored to ${checkpointId}`,
+    summary: message || "Restored from Sprite Agent Workbench.",
+    status: "warning",
+    metadata: {
+      checkpoint_id: checkpointId,
+      restored_checkpoint_id: checkpointId,
+      source: "workbench",
+    },
+  };
+}
+
 function validateEventType(value: unknown): AgentRunEventType {
   if (typeof value !== "string") {
     throw new Error("Event type is required.");
@@ -481,7 +506,7 @@ function getDefaultEventStatus(type: AgentRunEventType): AgentRunEventStatus {
   ) {
     return "success";
   }
-  if (type === "file_changed") return "warning";
+  if (type === "file_changed" || type === "restore_performed") return "warning";
   return "info";
 }
 

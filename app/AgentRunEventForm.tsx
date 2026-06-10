@@ -6,6 +6,7 @@ import { FormEvent, useState, useTransition } from "react";
 const EVENT_OPTIONS = [
   { value: "run_started", label: "Run started" },
   { value: "checkpoint_created", label: "Checkpoint created" },
+  { value: "restore_performed", label: "Restore performed" },
   { value: "command_started", label: "Command started" },
   { value: "command_finished", label: "Command finished" },
   { value: "file_changed", label: "File changed" },

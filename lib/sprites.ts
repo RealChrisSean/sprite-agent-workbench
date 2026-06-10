@@ -17,6 +17,7 @@ const execFileAsync = promisify(execFile);
 const DEFAULT_SPRITES_API_BASE_URL = "https://api.sprites.dev";
 const DEFAULT_SPRITES_API_TIMEOUT_MS = 10_000;
 const CHECKPOINT_CREATE_TIMEOUT_MS = 60_000;
+const CHECKPOINT_RESTORE_TIMEOUT_MS = 60_000;
 
 export type SpriteStatus = "cold" | "warm" | "running" | string;
 
@@ -68,6 +69,12 @@ export interface SpriteCheckpointCreateResult {
   events: SpriteCheckpointCreateEvent[];
   message: string;
   checkpointId: string | null;
+}
+
+export interface SpriteCheckpointRestoreResult {
+  events: SpriteCheckpointCreateEvent[];
+  message: string;
+  checkpointId: string;
 }
 
 export interface SpriteCommandError {
@@ -369,6 +376,25 @@ export function validateSpriteNameInput(value: unknown): string {
   return spriteName;
 }
 
+export function validateCheckpointIdInput(value: unknown): string {
+  if (typeof value !== "string") {
+    throw new Error("Checkpoint id must be a string.");
+  }
+
+  const checkpointId = value.trim();
+  if (!checkpointId) {
+    throw new Error("Checkpoint id is required.");
+  }
+  if (checkpointId.length > 128) {
+    throw new Error("Checkpoint id is too long.");
+  }
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(checkpointId)) {
+    throw new Error("Checkpoint id contains unsupported characters.");
+  }
+
+  return checkpointId;
+}
+
 export function validateCheckpointCommentInput(value: unknown): string | undefined {
   if (value === undefined || value === null) {
     return undefined;
@@ -467,6 +493,49 @@ export async function createSpriteCheckpoint(
     events,
     message,
     checkpointId: parseCheckpointId(message),
+  };
+}
+
+export async function restoreSpriteCheckpoint(
+  spriteNameInput: unknown,
+  checkpointIdInput: unknown
+): Promise<SpriteCheckpointRestoreResult> {
+  const spriteName = validateSpriteNameInput(spriteNameInput);
+  const checkpointId = validateCheckpointIdInput(checkpointIdInput);
+  const output = await runSpriteApiText(
+    `/v1/sprites/${encodeURIComponent(spriteName)}/checkpoints/${encodeURIComponent(
+      checkpointId
+    )}/restore`,
+    {
+      method: "POST",
+      timeoutMs: CHECKPOINT_RESTORE_TIMEOUT_MS,
+    }
+  );
+  const events = parseCheckpointCreateEvents(output);
+
+  if (events.length === 0) {
+    throw new Error("Sprites API did not return restore progress.");
+  }
+
+  const errorEvent = events.find((event) => event.type === "error");
+  if (errorEvent) {
+    throw new Error(
+      errorEvent.error || errorEvent.data || "Checkpoint restore failed."
+    );
+  }
+
+  const completeEvent = [...events]
+    .reverse()
+    .find((event) => event.type === "complete");
+  const message =
+    completeEvent?.data ||
+    [...events].reverse().find((event) => event.data)?.data ||
+    `Restored to ${checkpointId}.`;
+
+  return {
+    events,
+    message,
+    checkpointId,
   };
 }
 

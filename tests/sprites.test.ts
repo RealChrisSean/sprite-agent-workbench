@@ -6,6 +6,9 @@ import {
   POST as createCheckpointRoute,
 } from "../app/api/sprites/checkpoints/route";
 import {
+  POST as restoreCheckpointRoute,
+} from "../app/api/sprites/restore/route";
+import {
   DELETE as deleteFallbackToken,
   POST as saveFallbackToken,
 } from "../app/api/setup/token/route";
@@ -20,6 +23,7 @@ import {
   getSpriteStatusGroups,
   parseCheckpointCreateEvents,
   parseSpriteApiJson,
+  restoreSpriteCheckpoint,
   selectDashboardSprite,
   type DashboardSprite,
 } from "../lib/sprites";
@@ -191,6 +195,41 @@ describe("Sprite API helpers", () => {
         headers: expect.objectContaining({
           authorization: "Bearer token-123",
           "content-type": "application/json",
+        }),
+      })
+    );
+  });
+
+  it("restores a checkpoint with a server-side token and parses completion", async () => {
+    vi.stubEnv("SPRITES_API_TOKEN", "token-123");
+    vi.stubEnv("SPRITES_API_BASE_URL", "https://api.test");
+    const fetchMock = vi.fn(async () =>
+      textResponse(
+        [
+          "{\"type\":\"info\",\"data\":\"Restoring to checkpoint v9...\"}",
+          "{\"type\":\"complete\",\"data\":\"Restored to v9\"}",
+        ].join("\n")
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await restoreSpriteCheckpoint(
+      "sprite-agent-workbench",
+      "v9"
+    );
+
+    expect(result).toMatchObject({
+      checkpointId: "v9",
+      message: "Restored to v9",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      new URL(
+        "https://api.test/v1/sprites/sprite-agent-workbench/checkpoints/v9/restore"
+      ),
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          authorization: "Bearer token-123",
         }),
       })
     );
@@ -656,6 +695,162 @@ describe("checkpoint creation route", () => {
         body: JSON.stringify({
           spriteName: "sprite-agent-workbench",
           comment: "clean start",
+        }),
+      })
+    );
+    const body = (await response.json()) as { ok?: boolean; message?: string };
+
+    expect(response.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.message).toContain("Origin");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("checkpoint restore route", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("restores a checkpoint through a same-origin server route and records an audit event", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "sprite-workbench-restore-test-"));
+    vi.stubEnv(
+      "SPRITE_AGENT_WORKBENCH_RUN_EVENTS_PATH",
+      join(dir, "run-events.jsonl")
+    );
+    vi.stubEnv("SPRITES_API_TOKEN", "token-123");
+    vi.stubEnv("SPRITES_API_BASE_URL", "https://api.test");
+    const fetchMock = vi.fn(async () =>
+      textResponse(
+        [
+          "{\"type\":\"info\",\"data\":\"Restoring to checkpoint v9...\"}",
+          "{\"type\":\"complete\",\"data\":\"Restored to v9\"}",
+        ].join("\n")
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await restoreCheckpointRoute(
+      new Request("http://localhost/api/sprites/restore", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "http://localhost",
+        },
+        body: JSON.stringify({
+          spriteName: "sprite-agent-workbench",
+          checkpointId: "v9",
+          confirmSpriteName: "sprite-agent-workbench",
+          acknowledgeOverwrite: true,
+        }),
+      })
+    );
+    const body = (await response.json()) as {
+      checkpointId?: string;
+      message?: string;
+      ok?: boolean;
+      runEventId?: string | null;
+      runEventError?: string | null;
+    };
+    const runEvents = await readAgentRunEventsForSprite(
+      "sprite-agent-workbench"
+    );
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      ok: true,
+      checkpointId: "v9",
+      message: "Restored to v9",
+      runEventError: null,
+    });
+    expect(body.runEventId).toEqual(expect.any(String));
+    expect(runEvents).toHaveLength(1);
+    expect(runEvents[0]).toMatchObject({
+      type: "restore_performed",
+      label: "Restored to v9",
+      status: "warning",
+      metadata: {
+        checkpoint_id: "v9",
+        restored_checkpoint_id: "v9",
+        source: "workbench",
+      },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("rejects restore when confirmation does not match the Sprite name", async () => {
+    vi.stubEnv("SPRITES_API_TOKEN", "token-123");
+    vi.stubGlobal("fetch", vi.fn());
+
+    const response = await restoreCheckpointRoute(
+      new Request("http://localhost/api/sprites/restore", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "http://localhost",
+        },
+        body: JSON.stringify({
+          spriteName: "sprite-agent-workbench",
+          checkpointId: "v9",
+          confirmSpriteName: "wrong-sprite",
+          acknowledgeOverwrite: true,
+        }),
+      })
+    );
+    const body = (await response.json()) as { ok?: boolean; message?: string };
+
+    expect(response.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.message).toContain("Confirmation");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("rejects restore without explicit overwrite acknowledgment", async () => {
+    vi.stubEnv("SPRITES_API_TOKEN", "token-123");
+    vi.stubGlobal("fetch", vi.fn());
+
+    const response = await restoreCheckpointRoute(
+      new Request("http://localhost/api/sprites/restore", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "http://localhost",
+        },
+        body: JSON.stringify({
+          spriteName: "sprite-agent-workbench",
+          checkpointId: "v9",
+          confirmSpriteName: "sprite-agent-workbench",
+          acknowledgeOverwrite: false,
+        }),
+      })
+    );
+    const body = (await response.json()) as { ok?: boolean; message?: string };
+
+    expect(response.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.message).toContain("overwrite");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("rejects restore without a same-origin request", async () => {
+    vi.stubEnv("SPRITES_API_TOKEN", "token-123");
+    vi.stubGlobal("fetch", vi.fn());
+
+    const response = await restoreCheckpointRoute(
+      new Request("http://localhost/api/sprites/restore", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          spriteName: "sprite-agent-workbench",
+          checkpointId: "v9",
+          confirmSpriteName: "sprite-agent-workbench",
+          acknowledgeOverwrite: true,
         }),
       })
     );
