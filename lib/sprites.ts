@@ -654,6 +654,22 @@ export async function validateSpritesApiToken(token: string): Promise<void> {
   await runSpriteApiWithToken<SpriteListResponse>("/v1/sprites/", token);
 }
 
+export interface SpriteConnectionTestResult {
+  source: SpriteDataSource;
+  orgName: string | null;
+  total: number;
+}
+
+export async function testSpriteConnection(): Promise<SpriteConnectionTestResult> {
+  const source = getSpriteDataSource();
+  const list = await runSpriteApi<SpriteListResponse>("/v1/sprites/");
+  return {
+    source,
+    orgName: list.name,
+    total: list.sprites.length,
+  };
+}
+
 export function selectDashboardSprite(
   sprites: DashboardSprite[],
   requestedName: string | null

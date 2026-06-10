@@ -20,6 +20,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { RefreshButton } from "./RefreshButton";
 import { StatusPill } from "./StatusPill";
+import { TestConnectionButton } from "./TestConnectionButton";
 import { TokenFallbackForm } from "./TokenFallbackForm";
 
 export const dynamic = "force-dynamic";
@@ -45,25 +46,21 @@ export default async function Home({
   return (
     <main className="min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,#d9f99d_0,#f8fafc_28rem,#e5e7eb_100%)] text-slate-950">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-5 py-6 sm:px-8 lg:px-10">
-        <header className="flex flex-col gap-5 rounded-[2rem] border border-white/70 bg-white/70 p-6 shadow-[0_24px_90px_rgba(15,23,42,0.10)] backdrop-blur md:flex-row md:items-end md:justify-between">
-          <div className="max-w-3xl">
-            <div className="mb-4 inline-flex rounded-full border border-lime-300 bg-lime-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-lime-900">
+        <header className="flex flex-wrap items-center justify-between gap-4 rounded-[2rem] border border-white/70 bg-white/70 px-6 py-4 shadow-[0_24px_90px_rgba(15,23,42,0.10)] backdrop-blur">
+          <div>
+            <h1 className="text-lg font-black tracking-tight text-slate-950">
               Sprite Agent Workbench
-            </div>
-            <h1 className="text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
-              See why your Sprites are awake, cold, or ready to restore.
             </h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-700 sm:text-base">
-              Fleet state with evidence, checkpoint history with context, and
-              passive cost exposure for every Sprite this account can see.
+            <p className="mt-0.5 text-xs text-slate-500">
+              Fleet state with evidence · checkpoints with context · passive
+              cost exposure
             </p>
           </div>
-          <div className="rounded-3xl border border-slate-200 bg-slate-950 p-4 text-sm text-lime-100 shadow-xl">
-            <p className="text-slate-400">Last refresh</p>
-            <p className="mt-1 font-mono text-lg">{formatDate(data.fetchedAt)}</p>
-            <div className="mt-4">
-              <RefreshButton />
-            </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="font-mono text-sm text-slate-600">
+              Refreshed {formatDate(data.fetchedAt)}
+            </span>
+            <RefreshButton />
           </div>
         </header>
 
@@ -71,6 +68,12 @@ export default async function Home({
           <>
             <section className="rounded-[2rem] border border-red-200 bg-red-50 p-6 text-red-950">
               <h2 className="text-xl font-bold">Sprite data is not ready</h2>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-red-900">
+                This dashboard shows why your Sprites are awake, cold, or ready
+                to restore — fleet state with evidence, checkpoint history with
+                context, and passive cost exposure. It needs a connection
+                first.
+              </p>
               <p className="mt-2 text-red-800">{data.error?.message}</p>
               <pre className="mt-4 overflow-x-auto rounded-2xl bg-red-950 p-4 text-sm text-red-50">
                 {data.error?.hint}
@@ -127,9 +130,12 @@ function AuthSetupPanel({
             without holding the credential itself.
           </p>
         </div>
-        <span className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700">
-          Active: {getAuthSourceLabel(auth.source)}
-        </span>
+        <div className="flex flex-col items-start gap-2 md:items-end">
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700">
+            Active: {getAuthSourceLabel(auth.source)}
+          </span>
+          <TestConnectionButton />
+        </div>
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
@@ -285,19 +291,10 @@ function FleetStatusPanel({
 function SpriteRoster({ sprites }: { sprites: DashboardSprite[] }) {
   return (
     <section className="rounded-[2rem] border border-white/70 bg-white/75 p-5 shadow-[0_20px_80px_rgba(15,23,42,0.08)] backdrop-blur">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
-            Sprites
-          </p>
-          <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-950">
-            Pick a Sprite to inspect
-          </h2>
-          <p className="mt-2 text-sm leading-6 text-slate-600">
-            Checkpoints, restore, and the run timeline live on each Sprite
-            page.
-          </p>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-xl font-bold tracking-tight text-slate-950">
+          Sprites
+        </h2>
         <p className="text-sm text-slate-600">
           <span className="font-bold text-slate-950">{sprites.length}</span>{" "}
           visible
@@ -403,12 +400,10 @@ function CostExposurePanel({
           </div>
         </div>
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
           <DarkInfo label="Active now" value={String(exposure.activeNow)} />
-          <DarkInfo label="Running" value={String(exposure.runningNow)} />
-          <DarkInfo label="Warm" value={String(exposure.warmNow)} />
           <DarkInfo
-            label="Observed active"
+            label="Observed active (24h)"
             value={formatDuration(exposure.totalObservedActiveMs)}
           />
         </div>

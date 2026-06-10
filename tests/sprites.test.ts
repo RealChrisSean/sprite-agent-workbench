@@ -12,6 +12,7 @@ import {
   DELETE as deleteFallbackToken,
   POST as saveFallbackToken,
 } from "../app/api/setup/token/route";
+import { POST as testConnectionRoute } from "../app/api/setup/test-connection/route";
 import {
   createSpriteCheckpoint,
   createSpriteApiUrl,
@@ -1012,3 +1013,87 @@ function makeSpriteSummary(name: string, status: string) {
     environment_version: null,
   };
 }
+
+describe("connection test route", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("reports org, auth source, and sprite count for the active connection", async () => {
+    vi.stubEnv("SPRITES_API_TOKEN", "token-123");
+    vi.stubEnv("SPRITES_API_BASE_URL", "https://api.test");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse({
+          name: "chris-sean-dabatos",
+          running: 0,
+          warm: 1,
+          cold: 1,
+          running_limit: 10,
+          warm_limit: 10,
+          next_continuation_token: null,
+          has_more: false,
+          sprites: [
+            makeSpriteSummary("recallmem", "cold"),
+            makeSpriteSummary("workbench", "warm"),
+          ],
+        })
+      )
+    );
+
+    const response = await testConnectionRoute(
+      new Request("http://localhost/api/setup/test-connection", {
+        method: "POST",
+        headers: { origin: "http://localhost" },
+      })
+    );
+    const body = (await response.json()) as { ok?: boolean; message?: string };
+
+    expect(response.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.message).toContain("chris-sean-dabatos");
+    expect(body.message).toContain("2 Sprites visible");
+  });
+
+  it("returns the connection error message when the API is unreachable", async () => {
+    vi.stubEnv("SPRITES_API_TOKEN", "token-123");
+    vi.stubEnv("SPRITES_API_BASE_URL", "https://api.test");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("connect ECONNREFUSED");
+      })
+    );
+
+    const response = await testConnectionRoute(
+      new Request("http://localhost/api/setup/test-connection", {
+        method: "POST",
+        headers: { origin: "http://localhost" },
+      })
+    );
+    const body = (await response.json()) as { ok?: boolean; message?: string };
+
+    expect(response.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.message).toContain("ECONNREFUSED");
+  });
+
+  it("rejects cross-origin connection tests", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+
+    const response = await testConnectionRoute(
+      new Request("http://localhost/api/setup/test-connection", {
+        method: "POST",
+        headers: { origin: "https://evil.example" },
+      })
+    );
+    const body = (await response.json()) as { ok?: boolean; message?: string };
+
+    expect(response.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});

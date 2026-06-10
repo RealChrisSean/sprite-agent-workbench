@@ -156,20 +156,7 @@ export default async function SpriteDetailPage({
           </section>
         ) : (
           <>
-            <section className="grid gap-5 lg:grid-cols-2">
-              <SleepBox sleep={sprite.sleep} />
-              <div className="rounded-[2rem] border border-white/70 bg-white/80 p-5 shadow-[0_20px_80px_rgba(15,23,42,0.08)] backdrop-blur">
-                <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
-                  Health check
-                </p>
-                <p className="mt-2 text-base font-bold text-slate-950">
-                  {sprite.health.label}
-                </p>
-                <p className="mt-1 text-sm leading-6 text-slate-600">
-                  {sprite.health.detail}
-                </p>
-              </div>
-            </section>
+            <SleepBox sleep={sprite.sleep} health={sprite.health} />
 
             <CheckpointsPanel sprite={sprite} timeline={timeline} />
 
@@ -271,9 +258,7 @@ function CheckpointListItem({
         </p>
         {contextEvents.length === 0 ? (
           <p className="mt-2 text-sm leading-6 text-slate-500">
-            No linked Workbench timeline event yet. Sprites gives us the
-            restore point; Workbench adds the explanation when it creates or
-            observes the work around it.
+            No linked timeline events yet.
           </p>
         ) : (
           <ol className="mt-3 space-y-3">
@@ -565,7 +550,13 @@ function Info({ label, value }: { label: string; value: string }) {
   );
 }
 
-function SleepBox({ sleep }: { sleep: SleepInference }) {
+function SleepBox({
+  sleep,
+  health,
+}: {
+  sleep: SleepInference;
+  health: DashboardSprite["health"];
+}) {
   const tone =
     sleep.tone === "good"
       ? "border-emerald-200 bg-emerald-50 text-emerald-950"
@@ -574,7 +565,7 @@ function SleepBox({ sleep }: { sleep: SleepInference }) {
         : "border-slate-200 bg-slate-50 text-slate-950";
 
   return (
-    <div className={`rounded-[2rem] border p-5 ${tone}`}>
+    <section className={`rounded-[2rem] border p-5 ${tone}`}>
       <p className="text-xs font-bold uppercase tracking-[0.18em] opacity-70">
         Why this state?
       </p>
@@ -587,6 +578,10 @@ function SleepBox({ sleep }: { sleep: SleepInference }) {
           </li>
         ))}
       </ul>
-    </div>
+      <p className="mt-4 border-t border-current/15 pt-3 text-sm leading-6 opacity-80">
+        <span className="font-bold">Health: {health.label}.</span>{" "}
+        {health.detail}
+      </p>
+    </section>
   );
 }
