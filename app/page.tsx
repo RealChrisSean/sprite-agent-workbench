@@ -2,6 +2,7 @@ import {
   getAgentRunTimeline,
   getCheckpointContextEvents,
   type AgentRunEvent,
+  type AgentRunFileChange,
   type AgentRunGroup,
   type AgentRunTimeline,
 } from "@/lib/agent-runs";
@@ -615,6 +616,9 @@ function CheckpointListItem({
                 {event.summary ? (
                   <p className="mt-1 text-slate-400">{event.summary}</p>
                 ) : null}
+                {event.fileChange ? (
+                  <FileChangeSummary fileChange={event.fileChange} compact />
+                ) : null}
               </li>
             ))}
           </ol>
@@ -755,6 +759,9 @@ function AgentRunEventItem({ event }: { event: AgentRunEvent }) {
       {event.summary ? (
         <p className="mt-2 text-sm leading-6 text-slate-600">{event.summary}</p>
       ) : null}
+      {event.fileChange ? (
+        <FileChangeSummary fileChange={event.fileChange} />
+      ) : null}
       {Object.keys(event.metadata).length > 0 ? (
         <div className="mt-2 flex flex-wrap gap-2">
           {Object.entries(event.metadata).map(([key, value]) => (
@@ -768,6 +775,91 @@ function AgentRunEventItem({ event }: { event: AgentRunEvent }) {
         </div>
       ) : null}
     </li>
+  );
+}
+
+function FileChangeSummary({
+  fileChange,
+  compact = false,
+}: {
+  fileChange: AgentRunFileChange;
+  compact?: boolean;
+}) {
+  const visibleFiles = fileChange.files.slice(0, compact ? 4 : 8);
+  const hiddenCount = fileChange.fileCount - visibleFiles.length;
+
+  return (
+    <div
+      className={
+        compact
+          ? "mt-2 rounded-2xl border border-slate-800 bg-slate-950 p-3"
+          : "mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3"
+      }
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p
+          className={
+            compact
+              ? "text-xs font-bold uppercase tracking-[0.16em] text-slate-500"
+              : "text-xs font-bold uppercase tracking-[0.16em] text-slate-500"
+          }
+        >
+          {fileChange.fileCount} file
+          {fileChange.fileCount === 1 ? "" : "s"} changed
+        </p>
+        {fileChange.diffStat ? (
+          <span
+            className={
+              compact
+                ? "font-mono text-xs text-slate-500"
+                : "font-mono text-xs text-slate-500"
+            }
+          >
+            {fileChange.diffStat}
+          </span>
+        ) : null}
+      </div>
+
+      <div className="mt-2 flex flex-wrap gap-2">
+        {visibleFiles.map((file, index) => (
+          <span
+            key={`${file.status}-${file.path}-${index}`}
+            className={
+              compact
+                ? "rounded-full border border-slate-800 bg-slate-900 px-2.5 py-1 font-mono text-xs font-semibold text-slate-300"
+                : "rounded-full border border-slate-200 bg-white px-2.5 py-1 font-mono text-xs font-semibold text-slate-600"
+            }
+            title={file.redacted ? "Secret-like path redacted" : file.path}
+          >
+            {file.status} {file.path}
+          </span>
+        ))}
+        {hiddenCount > 0 ? (
+          <span
+            className={
+              compact
+                ? "rounded-full border border-slate-800 bg-slate-900 px-2.5 py-1 text-xs font-bold text-slate-500"
+                : "rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-500"
+            }
+          >
+            +{hiddenCount} more
+          </span>
+        ) : null}
+      </div>
+
+      {fileChange.redactedCount > 0 ? (
+        <p
+          className={
+            compact
+              ? "mt-2 text-xs text-amber-200"
+              : "mt-2 text-xs text-amber-700"
+          }
+        >
+          {fileChange.redactedCount} secret-like path
+          {fileChange.redactedCount === 1 ? "" : "s"} redacted before storage.
+        </p>
+      ) : null}
+    </div>
   );
 }
 

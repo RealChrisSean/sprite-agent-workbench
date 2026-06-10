@@ -21,6 +21,8 @@ export function AgentRunEventForm({ spriteName }: { spriteName: string }) {
   const [runId, setRunId] = useState("");
   const [label, setLabel] = useState("");
   const [summary, setSummary] = useState("");
+  const [filesText, setFilesText] = useState("");
+  const [diffStat, setDiffStat] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -31,6 +33,13 @@ export function AgentRunEventForm({ spriteName }: { spriteName: string }) {
     setError(null);
 
     try {
+      const filePayload =
+        type === "file_changed"
+          ? {
+              files: parseChangedFiles(filesText),
+              diffStat,
+            }
+          : {};
       const res = await fetch("/api/runs/events", {
         method: "POST",
         headers: {
@@ -42,6 +51,7 @@ export function AgentRunEventForm({ spriteName }: { spriteName: string }) {
           runId,
           label,
           summary,
+          ...filePayload,
         }),
       });
       const body = (await res.json()) as {
@@ -56,6 +66,8 @@ export function AgentRunEventForm({ spriteName }: { spriteName: string }) {
       setRunId(body.event?.runId || runId);
       setLabel("");
       setSummary("");
+      setFilesText("");
+      setDiffStat("");
       setMessage(
         body.event?.runId
           ? `Recorded event on ${body.event.runId}. Refreshing timeline...`
@@ -132,6 +144,38 @@ export function AgentRunEventForm({ spriteName }: { spriteName: string }) {
         />
       </label>
 
+      {type === "file_changed" ? (
+        <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_0.8fr]">
+          <label className="block">
+            <span className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
+              Changed files
+            </span>
+            <textarea
+              className="mt-2 min-h-28 w-full resize-y rounded-2xl border border-slate-300 bg-white px-4 py-3 font-mono text-xs leading-5 text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-lime-500 focus:ring-4 focus:ring-lime-200"
+              placeholder={"Paste git diff --name-status lines:\nM\tapp/page.tsx\nA\tlib/example.ts\nD\told/file.ts"}
+              value={filesText}
+              onChange={(event) => setFilesText(event.currentTarget.value)}
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
+              Diff stat
+            </span>
+            <input
+              className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-lime-500 focus:ring-4 focus:ring-lime-200"
+              maxLength={160}
+              placeholder="Optional. 4 files changed, 120 insertions(+)"
+              value={diffStat}
+              onChange={(event) => setDiffStat(event.currentTarget.value)}
+            />
+            <p className="mt-2 text-xs leading-5 text-slate-500">
+              Secret-like paths are redacted server-side before storage.
+            </p>
+          </label>
+        </div>
+      ) : null}
+
       <div className="mt-3 flex justify-end">
         <button
           className="rounded-full bg-slate-950 px-5 py-3 text-sm font-bold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
@@ -154,4 +198,23 @@ export function AgentRunEventForm({ spriteName }: { spriteName: string }) {
       ) : null}
     </form>
   );
+}
+
+function parseChangedFiles(text: string): Array<{ status: string; path: string }> {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const match = line.match(/^([AMD])\s+(.+)$/);
+      if (!match) {
+        throw new Error(
+          "Changed file lines must look like: M app/page.tsx"
+        );
+      }
+      return {
+        status: match[1],
+        path: match[2],
+      };
+    });
 }

@@ -91,6 +91,69 @@ describe("agent run event storage", () => {
     ).resolves.toEqual([]);
   });
 
+  it("stores bounded file-change metadata and redacts secret-like paths", async () => {
+    useRunEventFile();
+
+    const event = await recordAgentRunEvent(
+      {
+        spriteName: "sprite-agent-workbench",
+        runId: "run-files",
+        type: "file_changed",
+        label: "UI files changed",
+        files: [
+          { status: "M", path: "app/page.tsx" },
+          { status: "A", path: ".env.local" },
+          { status: "D", path: "old/file.ts" },
+        ],
+        diffStat: "3 files changed, 42 insertions(+)",
+      },
+      new Date("2026-06-06T12:03:00Z")
+    );
+
+    expect(event).toMatchObject({
+      type: "file_changed",
+      status: "warning",
+      fileChange: {
+        fileCount: 3,
+        redactedCount: 1,
+        diffStat: "3 files changed, 42 insertions(+)",
+        files: [
+          { status: "M", path: "app/page.tsx", redacted: false },
+          {
+            status: "A",
+            path: "[redacted secret-like path]",
+            redacted: true,
+          },
+          { status: "D", path: "old/file.ts", redacted: false },
+        ],
+      },
+    });
+  });
+
+  it("rejects invalid file-change metadata before storage", async () => {
+    useRunEventFile();
+
+    await expect(
+      recordAgentRunEvent({
+        spriteName: "sprite-agent-workbench",
+        type: "file_changed",
+        files: [{ status: "R", path: "app/page.tsx" }],
+      })
+    ).rejects.toThrow("A, M, or D");
+
+    await expect(
+      recordAgentRunEvent({
+        spriteName: "sprite-agent-workbench",
+        type: "run_started",
+        files: [{ status: "M", path: "app/page.tsx" }],
+      })
+    ).rejects.toThrow("only valid for file_changed");
+
+    await expect(
+      readAgentRunEventsForSprite("sprite-agent-workbench")
+    ).resolves.toEqual([]);
+  });
+
   it("validates run IDs as safe grouping keys", () => {
     expect(() =>
       validateAgentRunEventInput({
@@ -188,6 +251,52 @@ describe("agent run event route", () => {
     await expect(
       readAgentRunEventsForSprite("sprite-agent-workbench")
     ).resolves.toHaveLength(1);
+  });
+
+  it("records a file_changed event through the route", async () => {
+    useRunEventFile();
+
+    const response = await createRunEventRoute(
+      new Request("http://localhost/api/runs/events", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "http://localhost",
+        },
+        body: JSON.stringify({
+          spriteName: "sprite-agent-workbench",
+          type: "file_changed",
+          runId: "run-route-files",
+          label: "Files changed",
+          files: [
+            { status: "M", path: "app/page.tsx" },
+            { status: "A", path: "config/token.txt" },
+          ],
+          diffStat: "2 files changed, 12 insertions(+)",
+        }),
+      })
+    );
+    const body = (await response.json()) as {
+      ok?: boolean;
+      event?: {
+        fileChange?: {
+          fileCount?: number;
+          redactedCount?: number;
+          files?: Array<{ path?: string; redacted?: boolean }>;
+        };
+      };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.event?.fileChange).toMatchObject({
+      fileCount: 2,
+      redactedCount: 1,
+      files: [
+        { path: "app/page.tsx", redacted: false },
+        { path: "[redacted secret-like path]", redacted: true },
+      ],
+    });
   });
 
   it("rejects run event writes without a same-origin request", async () => {

@@ -1,5 +1,6 @@
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { redactSecretLikePath } from "./path-redaction";
 import { validateSpriteNameInput } from "./sprites";
 
 export const AGENT_RUN_EVENT_TYPES = [
@@ -25,6 +26,7 @@ export type AgentRunEventMetadata = Record<
   string,
   string | number | boolean | null
 >;
+export type AgentRunFileStatus = "A" | "M" | "D";
 
 export const AGENT_RUN_EVENT_TYPE_LABELS: Record<AgentRunEventType, string> = {
   run_started: "Run started",
@@ -44,6 +46,21 @@ export interface AgentRunEventInput {
   summary?: unknown;
   status?: unknown;
   metadata?: unknown;
+  files?: unknown;
+  diffStat?: unknown;
+}
+
+export interface AgentRunChangedFile {
+  path: string;
+  status: AgentRunFileStatus;
+  redacted: boolean;
+}
+
+export interface AgentRunFileChange {
+  files: AgentRunChangedFile[];
+  fileCount: number;
+  redactedCount: number;
+  diffStat: string | null;
 }
 
 export interface AgentRunEvent {
@@ -55,6 +72,7 @@ export interface AgentRunEvent {
   summary: string | null;
   status: AgentRunEventStatus;
   metadata: AgentRunEventMetadata;
+  fileChange?: AgentRunFileChange | null;
   createdAt: string;
 }
 
@@ -75,6 +93,8 @@ export interface AgentRunTimeline {
 }
 
 const DEFAULT_EVENT_LIMIT = 60;
+const MAX_FILE_CHANGE_ENTRIES = 200;
+const MAX_FILE_PATH_LENGTH = 300;
 const SECRET_VALUE_PATTERN =
   /\b(?:bearer\s+\S+|[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API_KEY)[A-Z0-9_]*\s*[:=]\s*\S+)/i;
 const DEFAULT_RUN_EVENTS_PATH = join(
@@ -167,6 +187,7 @@ export function validateAgentRunEventInput(
       : validateEventStatus(input.status);
   const runId = validateRunId(input.runId) ?? createRunId(now);
   const metadata = validateMetadata(input.metadata);
+  const fileChange = validateFileChangeInput(type, input.files, input.diffStat);
 
   return {
     id: crypto.randomUUID(),
@@ -177,6 +198,7 @@ export function validateAgentRunEventInput(
     summary,
     status,
     metadata,
+    fileChange,
     createdAt: now.toISOString(),
   };
 }
@@ -356,6 +378,90 @@ function validateMetadataValue(
   throw new Error(`Metadata value '${key}' must be a primitive value.`);
 }
 
+function validateFileChangeInput(
+  type: AgentRunEventType,
+  files: unknown,
+  diffStat: unknown
+): AgentRunFileChange | null {
+  if (type !== "file_changed") {
+    if (files !== undefined || diffStat !== undefined) {
+      throw new Error("File change fields are only valid for file_changed events.");
+    }
+    return null;
+  }
+
+  if (!Array.isArray(files)) {
+    throw new Error("File changed events require a files array.");
+  }
+  if (files.length === 0) {
+    throw new Error("File changed events require at least one file.");
+  }
+  if (files.length > MAX_FILE_CHANGE_ENTRIES) {
+    throw new Error(
+      `File changed events can include at most ${MAX_FILE_CHANGE_ENTRIES} files.`
+    );
+  }
+
+  const changedFiles = files.map(validateChangedFileInput);
+  const redactedCount = changedFiles.filter((file) => file.redacted).length;
+  const safeDiffStat =
+    validateBoundedText(diffStat, "Diff stat", 160) ?? null;
+
+  return {
+    files: changedFiles,
+    fileCount: changedFiles.length,
+    redactedCount,
+    diffStat: safeDiffStat,
+  };
+}
+
+function validateChangedFileInput(value: unknown): AgentRunChangedFile {
+  if (!isPlainObject(value)) {
+    throw new Error("Each changed file must be an object.");
+  }
+
+  const status = validateFileStatus(value.status);
+  const path = validateFilePath(value.path);
+  const redacted = redactSecretLikePath(path);
+
+  return {
+    path: redacted.path,
+    status,
+    redacted: redacted.redacted,
+  };
+}
+
+function validateFileStatus(value: unknown): AgentRunFileStatus {
+  if (typeof value !== "string") {
+    throw new Error("Changed file status must be a string.");
+  }
+  if (value !== "A" && value !== "M" && value !== "D") {
+    throw new Error("Changed file status must be A, M, or D.");
+  }
+  return value;
+}
+
+function validateFilePath(value: unknown): string {
+  if (typeof value !== "string") {
+    throw new Error("Changed file path must be a string.");
+  }
+
+  const path = value.trim().replaceAll("\\", "/");
+  if (!path) {
+    throw new Error("Changed file path is required.");
+  }
+  if (path.length > MAX_FILE_PATH_LENGTH) {
+    throw new Error(
+      `Changed file path must be ${MAX_FILE_PATH_LENGTH} characters or fewer.`
+    );
+  }
+  if (/[\u0000-\u001f\u007f]/.test(path)) {
+    throw new Error("Changed file path must not contain control characters.");
+  }
+
+  return path;
+}
+
 function assertNoSecretLookingText(value: string, label: string): void {
   if (SECRET_VALUE_PATTERN.test(value)) {
     throw new Error(`${label} looks like it may contain a secret.`);
@@ -401,7 +507,36 @@ function isAgentRunEvent(value: unknown): value is AgentRunEvent {
       candidate.status as AgentRunEventStatus
     ) &&
     isPlainObject(candidate.metadata) &&
+    (candidate.fileChange === undefined ||
+      candidate.fileChange === null ||
+      isAgentRunFileChange(candidate.fileChange)) &&
     typeof candidate.createdAt === "string"
+  );
+}
+
+function isAgentRunFileChange(value: unknown): value is AgentRunFileChange {
+  if (!isPlainObject(value)) return false;
+  const candidate = value as Partial<AgentRunFileChange>;
+  return (
+    Array.isArray(candidate.files) &&
+    candidate.files.every(isAgentRunChangedFile) &&
+    typeof candidate.fileCount === "number" &&
+    Number.isInteger(candidate.fileCount) &&
+    typeof candidate.redactedCount === "number" &&
+    Number.isInteger(candidate.redactedCount) &&
+    (candidate.diffStat === null || typeof candidate.diffStat === "string")
+  );
+}
+
+function isAgentRunChangedFile(value: unknown): value is AgentRunChangedFile {
+  if (!isPlainObject(value)) return false;
+  const candidate = value as Partial<AgentRunChangedFile>;
+  return (
+    typeof candidate.path === "string" &&
+    (candidate.status === "A" ||
+      candidate.status === "M" ||
+      candidate.status === "D") &&
+    typeof candidate.redacted === "boolean"
   );
 }
 
