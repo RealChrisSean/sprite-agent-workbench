@@ -5,6 +5,11 @@ import {
   type AgentRunGroup,
   type AgentRunTimeline,
 } from "@/lib/agent-runs";
+import type {
+  CostExposureSummary,
+  CostRiskFlag,
+  SpriteExposureSummary,
+} from "@/lib/cost-ledger";
 import {
   formatDate,
   getDashboardData,
@@ -20,9 +25,9 @@ import {
   getAuthSourceLabel,
   type SpriteAuthStatus,
 } from "@/lib/sprite-auth";
-import Link from "next/link";
 import { AgentRunEventForm } from "./AgentRunEventForm";
 import { CheckpointCreateForm } from "./CheckpointCreateForm";
+import { RefreshButton } from "./RefreshButton";
 import { SpriteCheckpointSelect } from "./SpriteCheckpointSelect";
 import { TokenFallbackForm } from "./TokenFallbackForm";
 
@@ -57,10 +62,10 @@ export default async function Home({
             <div className="mb-4 inline-flex rounded-full border border-lime-300 bg-lime-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-lime-900">
               Sprite Agent Workbench
             </div>
-            <h1 className="text-4xl font-black tracking-tight text-slate-950 sm:text-6xl">
+            <h1 className="text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
               See why your Sprites are awake, cold, or ready to restore.
             </h1>
-            <p className="mt-4 max-w-2xl text-base leading-7 text-slate-700 sm:text-lg">
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-700 sm:text-base">
               A dashboard for anyone using Sprites. It prefers a Sprites
               Connector, can use a server-only token when needed, falls back to
               your local Sprite CLI, tracks checkpoint history, and explains
@@ -70,19 +75,14 @@ export default async function Home({
           <div className="rounded-3xl border border-slate-200 bg-slate-950 p-4 text-sm text-lime-100 shadow-xl">
             <p className="text-slate-400">Last refresh</p>
             <p className="mt-1 font-mono text-lg">{formatDate(data.fetchedAt)}</p>
-            <Link
-              className="mt-4 inline-flex rounded-full bg-lime-300 px-4 py-2 text-sm font-bold text-slate-950 transition hover:bg-lime-200"
-              href="/"
-            >
-              Refresh now
-            </Link>
+            <RefreshButton />
           </div>
         </header>
 
         {!data.ok ? (
           <>
             <section className="rounded-[2rem] border border-red-200 bg-red-50 p-6 text-red-950">
-              <h2 className="text-2xl font-black">Sprite data is not ready</h2>
+              <h2 className="text-xl font-bold">Sprite data is not ready</h2>
               <p className="mt-2 text-red-800">{data.error?.message}</p>
               <pre className="mt-4 overflow-x-auto rounded-2xl bg-red-950 p-4 text-sm text-red-50">
                 {data.error?.hint}
@@ -117,6 +117,10 @@ export default async function Home({
               runningLimit={data.counts.runningLimit}
               warmLimit={data.counts.warmLimit}
             />
+
+            {data.costExposure ? (
+              <CostExposurePanel exposure={data.costExposure} />
+            ) : null}
 
             {selectedSprite ? (
               <>
@@ -161,10 +165,10 @@ function AuthSetupPanel({
     <section className="rounded-[2rem] border border-white/70 bg-white/85 p-6 shadow-[0_20px_80px_rgba(15,23,42,0.08)] backdrop-blur">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
             Secure setup
           </p>
-          <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-950">
+          <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-950">
             Do not make the token part of the app.
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
@@ -173,17 +177,17 @@ function AuthSetupPanel({
             without holding the credential itself.
           </p>
         </div>
-        <span className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-black text-slate-700">
+        <span className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700">
           Active: {getAuthSourceLabel(auth.source)}
         </span>
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950">
-          <p className="text-xs font-black uppercase tracking-[0.2em] text-emerald-700">
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-700">
             Recommended
           </p>
-          <h3 className="mt-2 text-2xl font-black">
+          <h3 className="mt-2 text-lg font-bold">
             Use a Sprites Custom API Connector.
           </h3>
           <p className="mt-3 text-sm leading-6 text-emerald-900">
@@ -197,10 +201,10 @@ function AuthSetupPanel({
         </div>
 
         <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5 text-slate-950">
-          <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
             Also OK
           </p>
-          <h3 className="mt-2 text-2xl font-black">
+          <h3 className="mt-2 text-lg font-bold">
             Use a server-only environment token.
           </h3>
           <p className="mt-3 text-sm leading-6 text-slate-600">
@@ -242,7 +246,12 @@ function MetricCard({
       <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
         {label}
       </p>
-      <p className="mt-3 truncate text-3xl font-black text-slate-950">{value}</p>
+      <p
+        className="mt-3 break-words text-2xl font-black text-slate-950"
+        title={value}
+      >
+        {value}
+      </p>
       <p className="mt-2 text-sm text-slate-600">{detail}</p>
     </div>
   );
@@ -263,20 +272,20 @@ function FleetStatusPanel({
     <section className="rounded-[2rem] border border-white/70 bg-white/75 p-5 shadow-[0_20px_80px_rgba(15,23,42,0.08)] backdrop-blur">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
             Fleet state
           </p>
-          <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-950">
+          <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-950">
             Which Sprites are awake?
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            Built for bigger fleets: grouped status lanes, compact chips, and
-            hover tooltips with the evidence behind each running, warm, or cold
+            Built for bigger fleets: grouped status lanes and compact chips.
+            Open a chip to see the evidence behind each running, warm, or cold
             call.
           </p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-          <span className="font-black text-slate-950">{total}</span> Sprites
+          <span className="font-bold text-slate-950">{total}</span> Sprites
           visible · limits {runningLimit ?? "-"} running / {warmLimit ?? "-"}{" "}
           warm
         </div>
@@ -290,7 +299,7 @@ function FleetStatusPanel({
           >
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-xs font-black uppercase tracking-[0.18em] opacity-70">
+                <p className="text-xs font-bold uppercase tracking-[0.18em] opacity-70">
                   {group.label}
                 </p>
                 <p className="mt-1 text-sm font-semibold opacity-80">
@@ -302,20 +311,29 @@ function FleetStatusPanel({
               </span>
             </div>
 
-            <div className="mt-4 max-h-48 overflow-y-auto pr-1">
+            <div className="mt-4 max-h-64 overflow-y-auto pr-1">
               <div className="flex flex-wrap gap-2">
                 {group.sprites.map((sprite) => (
-                  <span
-                    key={sprite.id}
-                    title={getSpriteTooltip(sprite)}
-                    className="inline-flex max-w-full items-center gap-2 rounded-full border border-white/70 bg-white/75 px-3 py-1.5 text-xs font-bold shadow-sm"
-                  >
-                    <span
-                      className={`h-2.5 w-2.5 shrink-0 rounded-full ${getStatusDotClasses(sprite.status)}`}
-                      aria-hidden="true"
-                    />
-                    <span className="truncate">{sprite.name}</span>
-                  </span>
+                  <details key={sprite.id} className="max-w-full open:w-full">
+                    <summary className="inline-flex max-w-full cursor-pointer list-none items-center gap-2 rounded-full border border-white/70 bg-white/75 px-3 py-1.5 text-xs font-semibold shadow-sm transition hover:border-slate-400 [&::-webkit-details-marker]:hidden">
+                      <span
+                        className={`h-2.5 w-2.5 shrink-0 rounded-full ${getStatusDotClasses(sprite.status)}`}
+                        aria-hidden="true"
+                      />
+                      <span className="truncate">{sprite.name}</span>
+                    </summary>
+                    <div className="mt-2 rounded-2xl border border-white/70 bg-white/80 p-3 text-xs leading-5">
+                      <p className="font-bold">{sprite.sleep.label}</p>
+                      <ul className="mt-1 space-y-1">
+                        {sprite.sleep.evidence.map((item) => (
+                          <li key={item} className="flex gap-2">
+                            <span aria-hidden="true">-</span>
+                            <span>{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </details>
                 ))}
               </div>
             </div>
@@ -323,6 +341,158 @@ function FleetStatusPanel({
         ))}
       </div>
     </section>
+  );
+}
+
+function CostExposurePanel({
+  exposure,
+}: {
+  exposure: CostExposureSummary;
+}) {
+  const topSprites = exposure.sprites
+    .filter(
+      (sprite) =>
+        sprite.observedActiveMs > 0 ||
+        sprite.currentStatus === "running" ||
+        sprite.currentStatus === "warm" ||
+        sprite.riskFlags.some((flag) => flag.severity !== "info")
+    )
+    .slice(0, 6);
+
+  return (
+    <section className="overflow-hidden rounded-[2rem] border border-white/70 bg-slate-950 text-slate-100 shadow-[0_24px_90px_rgba(15,23,42,0.20)]">
+      <div className="border-b border-slate-800 p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.22em] text-lime-300">
+              Cost exposure
+            </p>
+            <h2 className="mt-2 text-xl font-bold tracking-tight">
+              Stop guessing what might be awake.
+            </h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+              {exposure.disclaimer} This ledger only uses passive dashboard
+              refreshes. It does not wake Sprites to measure them.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm text-slate-400">
+            Window starts{" "}
+            <span className="font-bold text-slate-100">
+              {formatDate(exposure.windowStartedAt)}
+            </span>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <DarkInfo label="Active now" value={String(exposure.activeNow)} />
+          <DarkInfo label="Running" value={String(exposure.runningNow)} />
+          <DarkInfo label="Warm" value={String(exposure.warmNow)} />
+          <DarkInfo
+            label="Observed active"
+            value={formatDuration(exposure.totalObservedActiveMs)}
+          />
+        </div>
+      </div>
+
+      <div className="grid gap-5 p-5 lg:grid-cols-[0.9fr_1.1fr]">
+        <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
+            Risk signals
+          </p>
+          {exposure.riskFlags.length === 0 ? (
+            <p className="mt-3 text-sm leading-6 text-slate-400">
+              No obvious exposure flags from the latest refresh. Keep watching
+              over normal use; one clean snapshot is not a bill.
+            </p>
+          ) : (
+            <RiskFlagList flags={exposure.riskFlags} />
+          )}
+          {exposure.writeError ? (
+            <p className="mt-4 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-3 text-sm leading-6 text-amber-100">
+              The dashboard is showing the current refresh, but the local
+              observation ledger could not be written.
+            </p>
+          ) : null}
+        </div>
+
+        <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
+              Sprites to watch
+            </p>
+            <span className="text-xs text-slate-500">
+              {exposure.observationCount} observations stored
+            </span>
+          </div>
+          {topSprites.length === 0 ? (
+            <p className="mt-3 text-sm leading-6 text-slate-400">
+              Everything visible is cold or low-signal right now.
+            </p>
+          ) : (
+            <ol className="mt-3 space-y-3">
+              {topSprites.map((sprite) => (
+                <SpriteExposureItem key={sprite.spriteName} sprite={sprite} />
+              ))}
+            </ol>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SpriteExposureItem({ sprite }: { sprite: SpriteExposureSummary }) {
+  return (
+    <li className="rounded-2xl border border-slate-800 bg-slate-950 p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-semibold text-slate-100">
+              {sprite.spriteName}
+            </span>
+            <StatusPill status={sprite.currentStatus} />
+          </div>
+          <p className="mt-1 text-xs text-slate-500">
+            URL auth: {sprite.currentUrlAuth} · observations:{" "}
+            {sprite.observationCount}
+          </p>
+        </div>
+        <span className="font-mono text-sm font-bold text-lime-200">
+          {formatDuration(sprite.observedActiveMs)}
+        </span>
+      </div>
+
+      {sprite.riskFlags.length > 0 ? (
+        <RiskFlagList flags={sprite.riskFlags.slice(0, 3)} compact />
+      ) : null}
+    </li>
+  );
+}
+
+function RiskFlagList({
+  flags,
+  compact = false,
+}: {
+  flags: CostRiskFlag[];
+  compact?: boolean;
+}) {
+  return (
+    <ul className={compact ? "mt-3 flex flex-wrap gap-2" : "mt-3 space-y-2"}>
+      {flags.map((flag) => (
+        <li
+          key={`${flag.label}-${flag.detail}`}
+          className={
+            compact
+              ? `rounded-full border px-2.5 py-1 text-xs font-semibold ${getRiskFlagClasses(flag.severity)}`
+              : `rounded-2xl border p-3 text-sm leading-6 ${getRiskFlagClasses(flag.severity)}`
+          }
+          title={flag.detail}
+        >
+          <span className="font-bold">{flag.label}</span>
+          {!compact ? <p className="opacity-75">{flag.detail}</p> : null}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -340,10 +510,10 @@ function CheckpointInspector({
       <div className="border-b border-slate-800 p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.22em] text-lime-300">
+            <p className="text-xs font-bold uppercase tracking-[0.22em] text-lime-300">
               Checkpoints
             </p>
-            <h2 className="mt-2 text-3xl font-black tracking-tight">
+            <h2 className="mt-2 text-2xl font-bold tracking-tight">
               {selectedSprite.name}
             </h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
@@ -410,7 +580,7 @@ function CheckpointListItem({
   return (
     <li className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <span className="font-mono text-sm font-black text-lime-200">
+        <span className="font-mono text-sm font-semibold text-lime-200">
           {checkpoint.id}
         </span>
         <span className="text-xs text-slate-500">
@@ -421,7 +591,7 @@ function CheckpointListItem({
         {checkpoint.comment || "No comment"}
       </p>
       <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950 p-3">
-        <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
           Known context
         </p>
         {contextEvents.length === 0 ? (
@@ -435,7 +605,7 @@ function CheckpointListItem({
             {contextEvents.map((event) => (
               <li key={event.id} className="text-sm leading-6 text-slate-300">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-bold text-lime-100">
+                  <span className="font-semibold text-lime-100">
                     {event.label}
                   </span>
                   <span className="text-xs text-slate-500">
@@ -468,10 +638,10 @@ function AgentRunTimelinePanel({
       <div className="border-b border-slate-200 p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.22em] text-slate-500">
+            <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500">
               Agent run timeline
             </p>
-            <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-950">
+            <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-950">
               What happened inside {selectedSprite.name}?
             </h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
@@ -487,18 +657,14 @@ function AgentRunTimelinePanel({
         </div>
       </div>
 
-      <div className="grid gap-5 p-5 xl:grid-cols-[0.95fr_1.05fr]">
-        <div>
-          <AgentRunEventForm spriteName={selectedSprite.name} />
-        </div>
-
+      <div className="flex flex-col gap-5 p-5">
         <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
                 Latest activity
               </p>
-              <p className="mt-2 text-lg font-black text-slate-950">
+              <p className="mt-2 text-lg font-bold text-slate-950">
                 {latestRun ? latestRun.title : "No runs yet"}
               </p>
             </div>
@@ -520,6 +686,19 @@ function AgentRunTimelinePanel({
             </ol>
           )}
         </div>
+
+        <details className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+          <summary className="cursor-pointer list-none p-4 text-sm font-bold text-slate-700 transition hover:text-slate-950 [&::-webkit-details-marker]:hidden">
+            Seed a manual event
+            <span className="ml-2 font-normal text-slate-500">
+              For dogfooding. A real agent runner can post to the same route
+              later.
+            </span>
+          </summary>
+          <div className="px-4 pb-4">
+            <AgentRunEventForm spriteName={selectedSprite.name} />
+          </div>
+        </details>
       </div>
     </section>
   );
@@ -531,7 +710,7 @@ function AgentRunGroupItem({ run }: { run: AgentRunGroup }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="truncate text-base font-black text-slate-950">
+            <h3 className="truncate text-base font-semibold text-slate-950">
               {run.title}
             </h3>
             <RunStatusPill status={run.status} />
@@ -564,7 +743,7 @@ function AgentRunEventItem({ event }: { event: AgentRunEvent }) {
       />
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <p className="text-sm font-black text-slate-950">{event.label}</p>
+          <p className="text-sm font-semibold text-slate-950">{event.label}</p>
           <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-500">
             {event.type.replaceAll("_", " ")}
           </p>
@@ -603,7 +782,7 @@ function RunStatusPill({ status }: { status: string }) {
           : "border-slate-200 bg-slate-100 text-slate-700";
 
   return (
-    <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-[0.14em] ${classes}`}>
+    <span className={`rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] ${classes}`}>
       {status}
     </span>
   );
@@ -631,7 +810,7 @@ function SpriteCard({
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-2xl font-black tracking-tight text-slate-950">
+              <h2 className="text-lg font-bold tracking-tight text-slate-950">
                 {sprite.name}
               </h2>
               <StatusPill status={sprite.status} />
@@ -675,7 +854,7 @@ function SpriteCard({
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
               Health check
             </p>
-            <p className="mt-2 text-lg font-black text-slate-950">
+            <p className="mt-2 text-base font-bold text-slate-950">
               {sprite.health.label}
             </p>
             <p className="mt-1 text-sm leading-6 text-slate-600">
@@ -689,14 +868,17 @@ function SpriteCard({
             Operations snapshot
           </p>
           {checkpointsLoaded ? (
-            <div className="mt-3 grid gap-3 sm:grid-cols-3">
-              <Info label="Checkpoints" value={String(sprite.checkpoints.length)} />
-              <Info label="Latest" value={latestCheckpoint?.id || "None"} />
-              <Info
+            <dl className="mt-3 space-y-2">
+              <InfoRow
+                label="Checkpoints"
+                value={String(sprite.checkpoints.length)}
+              />
+              <InfoRow label="Latest" value={latestCheckpoint?.id || "None"} />
+              <InfoRow
                 label="Created"
                 value={latestCheckpoint ? formatDate(latestCheckpoint.create_time) : "Never"}
               />
-            </div>
+            </dl>
           ) : (
             <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3 text-sm leading-6 text-slate-600">
               Checkpoints load in the inspector above only for the selected
@@ -727,14 +909,6 @@ function SpriteCard({
   );
 }
 
-function getSpriteTooltip(sprite: DashboardSprite): string {
-  return [
-    `${sprite.name}: ${sprite.status}`,
-    sprite.sleep.label,
-    ...sprite.sleep.evidence,
-  ].join("\n");
-}
-
 function getStatusGroupClasses(group: SpriteStatusGroup<DashboardSprite>["key"]) {
   if (group === "running") {
     return "border-emerald-200 bg-emerald-50 text-emerald-950";
@@ -757,11 +931,37 @@ function getStatusDotClasses(status: string) {
 
 function Info({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-      <p className="text-[0.68rem] font-bold uppercase tracking-[0.18em] text-slate-500">
+    <div className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+      <p className="truncate text-[0.68rem] font-bold uppercase tracking-[0.08em] text-slate-500" title={label}>
         {label}
       </p>
-      <p className="mt-1 truncate text-sm font-bold text-slate-950">{value}</p>
+      <p className="mt-1 truncate text-sm font-bold text-slate-950" title={value}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm">
+      <dt className="shrink-0 text-slate-500">{label}</dt>
+      <dd className="truncate font-bold text-slate-950" title={value}>
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+function DarkInfo({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3">
+      <p className="truncate text-[0.68rem] font-bold uppercase tracking-[0.08em] text-slate-500" title={label}>
+        {label}
+      </p>
+      <p className="mt-1 truncate text-lg font-black text-slate-100" title={value}>
+        {value}
+      </p>
     </div>
   );
 }
@@ -779,7 +979,7 @@ function SleepBox({ sleep }: { sleep: SleepInference }) {
       <p className="text-xs font-bold uppercase tracking-[0.18em] opacity-70">
         Why this state?
       </p>
-      <p className="mt-2 text-xl font-black">{sleep.label}</p>
+      <p className="mt-2 text-base font-bold">{sleep.label}</p>
       <ul className="mt-3 space-y-2 text-sm leading-6">
         {sleep.evidence.map((item) => (
           <li key={item} className="flex gap-2">
@@ -803,8 +1003,27 @@ function StatusPill({ status }: { status: string }) {
           : "bg-amber-100 text-amber-900 border-amber-200";
 
   return (
-    <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-[0.16em] ${classes}`}>
+    <span className={`rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] ${classes}`}>
       {status}
     </span>
   );
+}
+
+function getRiskFlagClasses(severity: CostRiskFlag["severity"]): string {
+  if (severity === "danger") {
+    return "border-red-400/30 bg-red-400/10 text-red-100";
+  }
+  if (severity === "warning") {
+    return "border-amber-400/30 bg-amber-400/10 text-amber-100";
+  }
+  return "border-slate-700 bg-slate-800 text-slate-300";
+}
+
+function formatDuration(ms: number): string {
+  if (ms <= 0) return "0m";
+  const minutes = Math.max(1, Math.round(ms / 60_000));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder > 0 ? `${hours}h ${remainder}m` : `${hours}h`;
 }

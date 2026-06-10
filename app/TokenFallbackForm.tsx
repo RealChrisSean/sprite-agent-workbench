@@ -73,16 +73,16 @@ export function TokenFallbackForm({
     <div className="rounded-3xl border border-amber-300 bg-amber-50 p-5 text-amber-950">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-xs font-black uppercase tracking-[0.2em] text-amber-700">
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">
             Fallback
           </p>
-          <h3 className="mt-2 text-2xl font-black">
+          <h3 className="mt-2 text-lg font-bold">
             Paste a token only if you accept the checkpoint risk.
           </h3>
         </div>
         {hasSavedToken ? (
           <button
-            className="rounded-full border border-amber-400 px-4 py-2 text-sm font-black transition hover:bg-amber-100 disabled:opacity-60"
+            className="rounded-full border border-amber-400 px-4 py-2 text-sm font-bold transition hover:bg-amber-100 disabled:opacity-60"
             disabled={isPending}
             type="button"
             onClick={deleteToken}
@@ -101,7 +101,7 @@ export function TokenFallbackForm({
 
       <form className="mt-5 space-y-4" onSubmit={submitToken}>
         <label className="block">
-          <span className="text-sm font-black">Sprites API token</span>
+          <span className="text-sm font-bold">Sprites API token</span>
           <input
             className="mt-2 w-full rounded-2xl border border-amber-300 bg-white px-4 py-3 font-mono text-sm outline-none focus:border-amber-600 focus:ring-4 focus:ring-amber-200"
             placeholder="Paste token here"
@@ -125,7 +125,7 @@ export function TokenFallbackForm({
         </label>
 
         <button
-          className="rounded-full bg-amber-500 px-5 py-3 text-sm font-black text-white transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-white transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={isPending || !token.trim()}
           type="submit"
         >

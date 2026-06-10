@@ -68,13 +68,10 @@ export function AgentRunEventForm({ spriteName }: { spriteName: string }) {
   }
 
   return (
-    <form
-      className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm"
-      onSubmit={recordEvent}
-    >
+    <form onSubmit={recordEvent}>
       <div className="grid gap-3 lg:grid-cols-[0.9fr_1fr]">
         <label>
-          <span className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+          <span className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
             Event type
           </span>
           <select
@@ -96,7 +93,7 @@ export function AgentRunEventForm({ spriteName }: { spriteName: string }) {
         </label>
 
         <label>
-          <span className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+          <span className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
             Run id
           </span>
           <input
@@ -110,7 +107,7 @@ export function AgentRunEventForm({ spriteName }: { spriteName: string }) {
       </div>
 
       <label className="mt-3 block">
-        <span className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+        <span className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
           Label
         </span>
         <input
@@ -123,7 +120,7 @@ export function AgentRunEventForm({ spriteName }: { spriteName: string }) {
       </label>
 
       <label className="mt-3 block">
-        <span className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+        <span className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
           Summary
         </span>
         <textarea
@@ -135,13 +132,9 @@ export function AgentRunEventForm({ spriteName }: { spriteName: string }) {
         />
       </label>
 
-      <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-xs leading-5 text-slate-500">
-          Manual seed events are for dogfooding. A real agent runner can post to
-          this same route later.
-        </p>
+      <div className="mt-3 flex justify-end">
         <button
-          className="rounded-full bg-slate-950 px-5 py-3 text-sm font-black text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-full bg-slate-950 px-5 py-3 text-sm font-bold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={isPending}
           type="submit"
         >

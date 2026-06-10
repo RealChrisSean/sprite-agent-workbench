@@ -54,7 +54,7 @@ export function CheckpointCreateForm({ spriteName }: { spriteName: string }) {
     >
       <div className="flex flex-col gap-3 xl:flex-row xl:items-end">
         <label className="min-w-0 flex-1">
-          <span className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+          <span className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
             New restore point
           </span>
           <input
@@ -66,7 +66,7 @@ export function CheckpointCreateForm({ spriteName }: { spriteName: string }) {
           />
         </label>
         <button
-          className="rounded-full bg-lime-300 px-5 py-3 text-sm font-black text-slate-950 transition hover:bg-lime-200 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-full bg-lime-300 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-lime-200 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={isPending}
           type="submit"
         >
