@@ -1,11 +1,3 @@
-import {
-  getAgentRunTimeline,
-  getCheckpointContextEvents,
-  type AgentRunEvent,
-  type AgentRunFileChange,
-  type AgentRunGroup,
-  type AgentRunTimeline,
-} from "@/lib/agent-runs";
 import type {
   CostExposureSummary,
   CostRiskFlag,
@@ -16,21 +8,18 @@ import {
   getDashboardData,
   getSpriteDashboardUrl,
   getSpriteStatusGroups,
-  selectDashboardSprite,
   type DashboardSprite,
-  type SleepInference,
-  type SpriteCheckpoint,
   type SpriteStatusGroup,
 } from "@/lib/sprites";
 import {
   getAuthSourceLabel,
   type SpriteAuthStatus,
+  type SpriteAuthSource,
 } from "@/lib/sprite-auth";
-import { AgentRunEventForm } from "./AgentRunEventForm";
-import { CheckpointCreateForm } from "./CheckpointCreateForm";
+import Link from "next/link";
+import { redirect } from "next/navigation";
 import { RefreshButton } from "./RefreshButton";
-import { RestoreCheckpointForm } from "./RestoreCheckpointForm";
-import { SpriteCheckpointSelect } from "./SpriteCheckpointSelect";
+import { StatusPill } from "./StatusPill";
 import { TokenFallbackForm } from "./TokenFallbackForm";
 
 export const dynamic = "force-dynamic";
@@ -46,15 +35,12 @@ export default async function Home({
 }) {
   const params = searchParams ? await searchParams : {};
   const requestedSpriteName = readSingleParam(params.sprite);
-  const data = await getDashboardData(requestedSpriteName);
-  const selectedSprite = data.ok
-    ? selectDashboardSprite(data.sprites, requestedSpriteName)
-    : null;
+  if (requestedSpriteName) {
+    redirect(`/sprite/${encodeURIComponent(requestedSpriteName)}`);
+  }
+
+  const data = await getDashboardData(null, { loadCheckpoints: false });
   const statusGroups = data.ok ? getSpriteStatusGroups(data.sprites) : [];
-  const selectedRunTimeline =
-    data.ok && selectedSprite
-      ? await getAgentRunTimeline(selectedSprite.name)
-      : null;
 
   return (
     <main className="min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,#d9f99d_0,#f8fafc_28rem,#e5e7eb_100%)] text-slate-950">
@@ -68,16 +54,16 @@ export default async function Home({
               See why your Sprites are awake, cold, or ready to restore.
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-700 sm:text-base">
-              A dashboard for anyone using Sprites. It prefers a Sprites
-              Connector, can use a server-only token when needed, falls back to
-              your local Sprite CLI, tracks checkpoint history, and explains
-              cold state with evidence instead of vibes.
+              Fleet state with evidence, checkpoint history with context, and
+              passive cost exposure for every Sprite this account can see.
             </p>
           </div>
           <div className="rounded-3xl border border-slate-200 bg-slate-950 p-4 text-sm text-lime-100 shadow-xl">
             <p className="text-slate-400">Last refresh</p>
             <p className="mt-1 font-mono text-lg">{formatDate(data.fetchedAt)}</p>
-            <RefreshButton />
+            <div className="mt-4">
+              <RefreshButton />
+            </div>
           </div>
         </header>
 
@@ -98,24 +84,10 @@ export default async function Home({
               <AuthSetupPanel auth={data.auth} compact />
             ) : null}
 
-            <section className="grid gap-4 md:grid-cols-4">
-              <MetricCard
-                label="Org"
-                value={data.orgName || "Unknown"}
-                detail={`Current Sprite account via ${getAuthSourceLabel(data.source)}`}
-              />
-              <MetricCard label="Sprites" value={String(data.counts.total)} detail="Visible to this account" />
-              <MetricCard
-                label="Running / Warm"
-                value={`${data.counts.running} / ${data.counts.warm}`}
-                detail={`Limits: ${data.counts.runningLimit ?? "-"} running, ${data.counts.warmLimit ?? "-"} warm`}
-              />
-              <MetricCard label="Cold" value={String(data.counts.cold)} detail="Likely asleep or idle" />
-            </section>
-
             <FleetStatusPanel
               groups={statusGroups}
-              total={data.counts.total}
+              orgName={data.orgName}
+              source={data.source}
               runningLimit={data.counts.runningLimit}
               warmLimit={data.counts.warmLimit}
             />
@@ -124,31 +96,7 @@ export default async function Home({
               <CostExposurePanel exposure={data.costExposure} />
             ) : null}
 
-            {selectedSprite ? (
-              <>
-                <CheckpointInspector
-                  selectedSprite={selectedSprite}
-                  sprites={data.sprites}
-                  timeline={selectedRunTimeline}
-                />
-                {selectedRunTimeline ? (
-                  <AgentRunTimelinePanel
-                    selectedSprite={selectedSprite}
-                    timeline={selectedRunTimeline}
-                  />
-                ) : null}
-              </>
-            ) : null}
-
-            <section className="grid gap-5 lg:grid-cols-2">
-              {data.sprites.map((sprite) => (
-                <SpriteCard
-                  key={sprite.id}
-                  sprite={sprite}
-                  checkpointsLoaded={sprite.name === selectedSprite?.name}
-                />
-              ))}
-            </section>
+            <SpriteRoster sprites={data.sprites} />
           </>
         )}
       </div>
@@ -234,39 +182,16 @@ function readSingleParam(value: string | string[] | undefined): string | null {
   return value ?? null;
 }
 
-function MetricCard({
-  label,
-  value,
-  detail,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-}) {
-  return (
-    <div className="rounded-3xl border border-white/70 bg-white/75 p-5 shadow-sm backdrop-blur">
-      <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
-        {label}
-      </p>
-      <p
-        className="mt-3 break-words text-2xl font-black text-slate-950"
-        title={value}
-      >
-        {value}
-      </p>
-      <p className="mt-2 text-sm text-slate-600">{detail}</p>
-    </div>
-  );
-}
-
 function FleetStatusPanel({
   groups,
-  total,
+  orgName,
+  source,
   runningLimit,
   warmLimit,
 }: {
   groups: SpriteStatusGroup<DashboardSprite>[];
-  total: number;
+  orgName: string | null;
+  source: SpriteAuthSource | null;
   runningLimit: number | null;
   warmLimit: number | null;
 }) {
@@ -281,15 +206,20 @@ function FleetStatusPanel({
             Which Sprites are awake?
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            Built for bigger fleets: grouped status lanes and compact chips.
             Open a chip to see the evidence behind each running, warm, or cold
             call.
           </p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-          <span className="font-bold text-slate-950">{total}</span> Sprites
-          visible · limits {runningLimit ?? "-"} running / {warmLimit ?? "-"}{" "}
-          warm
+          <p>
+            <span className="font-bold text-slate-950">
+              {orgName || "Unknown org"}
+            </span>{" "}
+            · via {getAuthSourceLabel(source)}
+          </p>
+          <p className="mt-1">
+            Limits: {runningLimit ?? "-"} running / {warmLimit ?? "-"} warm
+          </p>
         </div>
       </div>
 
@@ -334,6 +264,12 @@ function FleetStatusPanel({
                           </li>
                         ))}
                       </ul>
+                      <Link
+                        className="mt-2 inline-flex font-bold text-slate-950 underline-offset-2 hover:underline"
+                        href={`/sprite/${encodeURIComponent(sprite.name)}`}
+                      >
+                        Inspect {sprite.name}
+                      </Link>
                     </div>
                   </details>
                 ))}
@@ -342,6 +278,87 @@ function FleetStatusPanel({
           </div>
         ))}
       </div>
+    </section>
+  );
+}
+
+function SpriteRoster({ sprites }: { sprites: DashboardSprite[] }) {
+  return (
+    <section className="rounded-[2rem] border border-white/70 bg-white/75 p-5 shadow-[0_20px_80px_rgba(15,23,42,0.08)] backdrop-blur">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
+            Sprites
+          </p>
+          <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-950">
+            Pick a Sprite to inspect
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            Checkpoints, restore, and the run timeline live on each Sprite
+            page.
+          </p>
+        </div>
+        <p className="text-sm text-slate-600">
+          <span className="font-bold text-slate-950">{sprites.length}</span>{" "}
+          visible
+        </p>
+      </div>
+
+      <ul className="mt-4 divide-y divide-slate-200 overflow-hidden rounded-3xl border border-slate-200 bg-white">
+        {sprites.map((sprite) => (
+          <li
+            key={sprite.id}
+            className="flex flex-wrap items-center gap-3 p-4 transition hover:bg-slate-50"
+          >
+            <span
+              className={`h-2.5 w-2.5 shrink-0 rounded-full ${getStatusDotClasses(sprite.status)}`}
+              aria-hidden="true"
+            />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <Link
+                  className="text-base font-semibold text-slate-950 underline-offset-2 hover:underline"
+                  href={`/sprite/${encodeURIComponent(sprite.name)}`}
+                >
+                  {sprite.name}
+                </Link>
+                <StatusPill status={sprite.status} />
+              </div>
+              <p className="mt-0.5 truncate text-xs text-slate-500">
+                Last running {formatDate(sprite.last_running_at)} · URL auth{" "}
+                {sprite.url_settings?.auth || "unknown"}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                className="rounded-full bg-slate-950 px-4 py-1.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                href={`/sprite/${encodeURIComponent(sprite.name)}`}
+              >
+                Inspect
+              </Link>
+              <a
+                className="rounded-full border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 transition hover:border-slate-950 hover:text-slate-950"
+                href={getSpriteDashboardUrl(sprite)}
+                target="_blank"
+                rel="noreferrer"
+                title={`Open ${sprite.name} in the Sprites dashboard`}
+              >
+                Manage in Sprites
+              </a>
+              {sprite.url ? (
+                <a
+                  className="rounded-full border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 transition hover:border-slate-950 hover:text-slate-950"
+                  href={sprite.url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open app
+                </a>
+              ) : null}
+            </div>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
@@ -360,10 +377,11 @@ function CostExposurePanel({
         sprite.riskFlags.some((flag) => flag.severity !== "info")
     )
     .slice(0, 6);
+  const isQuiet = exposure.riskFlags.length === 0 && topSprites.length === 0;
 
   return (
     <section className="overflow-hidden rounded-[2rem] border border-white/70 bg-slate-950 text-slate-100 shadow-[0_24px_90px_rgba(15,23,42,0.20)]">
-      <div className="border-b border-slate-800 p-5">
+      <div className={isQuiet ? "p-5" : "border-b border-slate-800 p-5"}>
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.22em] text-lime-300">
@@ -373,8 +391,8 @@ function CostExposurePanel({
               Stop guessing what might be awake.
             </h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-              {exposure.disclaimer} This ledger only uses passive dashboard
-              refreshes. It does not wake Sprites to measure them.
+              {exposure.disclaimer} Passive dashboard refreshes only; Sprites
+              are never woken to be measured.
             </p>
           </div>
           <div className="rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm text-slate-400">
@@ -394,51 +412,60 @@ function CostExposurePanel({
             value={formatDuration(exposure.totalObservedActiveMs)}
           />
         </div>
-      </div>
 
-      <div className="grid gap-5 p-5 lg:grid-cols-[0.9fr_1.1fr]">
-        <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
-            Risk signals
+        {isQuiet ? (
+          <p className="mt-4 text-sm leading-6 text-slate-400">
+            No risk signals and nothing active in the latest refresh
+            ({exposure.observationCount} observations stored). One clean
+            snapshot is not a bill; keep refreshing over normal use.
           </p>
-          {exposure.riskFlags.length === 0 ? (
-            <p className="mt-3 text-sm leading-6 text-slate-400">
-              No obvious exposure flags from the latest refresh. Keep watching
-              over normal use; one clean snapshot is not a bill.
-            </p>
-          ) : (
-            <RiskFlagList flags={exposure.riskFlags} />
-          )}
-          {exposure.writeError ? (
-            <p className="mt-4 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-3 text-sm leading-6 text-amber-100">
-              The dashboard is showing the current refresh, but the local
-              observation ledger could not be written.
-            </p>
-          ) : null}
-        </div>
-
-        <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
-              Sprites to watch
-            </p>
-            <span className="text-xs text-slate-500">
-              {exposure.observationCount} observations stored
-            </span>
-          </div>
-          {topSprites.length === 0 ? (
-            <p className="mt-3 text-sm leading-6 text-slate-400">
-              Everything visible is cold or low-signal right now.
-            </p>
-          ) : (
-            <ol className="mt-3 space-y-3">
-              {topSprites.map((sprite) => (
-                <SpriteExposureItem key={sprite.spriteName} sprite={sprite} />
-              ))}
-            </ol>
-          )}
-        </div>
+        ) : null}
+        {exposure.writeError ? (
+          <p className="mt-4 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-3 text-sm leading-6 text-amber-100">
+            The dashboard is showing the current refresh, but the local
+            observation ledger could not be written.
+          </p>
+        ) : null}
       </div>
+
+      {!isQuiet ? (
+        <div className="grid gap-5 p-5 lg:grid-cols-[0.9fr_1.1fr]">
+          <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
+              Risk signals
+            </p>
+            {exposure.riskFlags.length === 0 ? (
+              <p className="mt-3 text-sm leading-6 text-slate-400">
+                No obvious exposure flags from the latest refresh.
+              </p>
+            ) : (
+              <RiskFlagList flags={exposure.riskFlags} />
+            )}
+          </div>
+
+          <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
+                Sprites to watch
+              </p>
+              <span className="text-xs text-slate-500">
+                {exposure.observationCount} observations stored
+              </span>
+            </div>
+            {topSprites.length === 0 ? (
+              <p className="mt-3 text-sm leading-6 text-slate-400">
+                Everything visible is cold or low-signal right now.
+              </p>
+            ) : (
+              <ol className="mt-3 space-y-3">
+                {topSprites.map((sprite) => (
+                  <SpriteExposureItem key={sprite.spriteName} sprite={sprite} />
+                ))}
+              </ol>
+            )}
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -498,517 +525,6 @@ function RiskFlagList({
   );
 }
 
-function CheckpointInspector({
-  selectedSprite,
-  sprites,
-  timeline,
-}: {
-  selectedSprite: DashboardSprite;
-  sprites: DashboardSprite[];
-  timeline: AgentRunTimeline | null;
-}) {
-  return (
-    <section className="overflow-hidden rounded-[2rem] border border-white/70 bg-slate-950 text-slate-100 shadow-[0_24px_90px_rgba(15,23,42,0.20)]">
-      <div className="border-b border-slate-800 p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.22em] text-lime-300">
-              Checkpoints
-            </p>
-            <h2 className="mt-2 text-2xl font-bold tracking-tight">
-              {selectedSprite.name}
-            </h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-              Restore points for one Sprite at a time. This keeps the timeline
-              readable when the account has dozens of Sprites.
-            </p>
-          </div>
-          <SpriteCheckpointSelect
-            selectedName={selectedSprite.name}
-            options={sprites.map((sprite) => ({
-              name: sprite.name,
-              status: sprite.status,
-            }))}
-          />
-        </div>
-      </div>
-
-      <div className="p-5">
-        <div className="mb-4 flex flex-wrap items-center gap-3 text-sm text-slate-400">
-          <StatusPill status={selectedSprite.status} />
-          <span>{selectedSprite.checkpoints.length} checkpoints</span>
-          <span>Last running {formatDate(selectedSprite.last_running_at)}</span>
-        </div>
-
-        <div className="mb-4">
-          <CheckpointCreateForm spriteName={selectedSprite.name} />
-        </div>
-
-        {selectedSprite.checkpointError ? (
-          <p className="rounded-2xl bg-red-950/70 p-4 text-sm text-red-100">
-            {selectedSprite.checkpointError}
-          </p>
-        ) : selectedSprite.checkpoints.length === 0 ? (
-          <p className="rounded-2xl border border-slate-800 bg-slate-900 p-4 text-sm text-slate-300">
-            No checkpoints found for this Sprite yet.
-          </p>
-        ) : (
-          <ol className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
-            {selectedSprite.checkpoints.map((checkpoint) => (
-              <CheckpointListItem
-                key={`${selectedSprite.name}-${checkpoint.id}`}
-                spriteName={selectedSprite.name}
-                checkpoint={checkpoint}
-                contextEvents={
-                  timeline
-                    ? getCheckpointContextEvents(timeline.events, checkpoint.id)
-                    : []
-                }
-              />
-            ))}
-          </ol>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function CheckpointListItem({
-  spriteName,
-  checkpoint,
-  contextEvents,
-}: {
-  spriteName: string;
-  checkpoint: SpriteCheckpoint;
-  contextEvents: AgentRunEvent[];
-}) {
-  return (
-    <li className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <span className="font-mono text-sm font-semibold text-lime-200">
-          {checkpoint.id}
-        </span>
-        <span className="text-xs text-slate-500">
-          {formatDate(checkpoint.create_time)}
-        </span>
-      </div>
-      <p className="mt-2 text-sm text-slate-300">
-        {checkpoint.comment || "No comment"}
-      </p>
-      <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950 p-3">
-        <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
-          Known context
-        </p>
-        {contextEvents.length === 0 ? (
-          <p className="mt-2 text-sm leading-6 text-slate-500">
-            No linked Workbench timeline event yet. Sprites gives us the
-            restore point; Workbench adds the explanation when it creates or
-            observes the work around it.
-          </p>
-        ) : (
-          <ol className="mt-3 space-y-3">
-            {contextEvents.map((event) => (
-              <li key={event.id} className="text-sm leading-6 text-slate-300">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-semibold text-lime-100">
-                    {event.label}
-                  </span>
-                  <span className="text-xs text-slate-500">
-                    {formatDate(event.createdAt)}
-                  </span>
-                </div>
-                {event.summary ? (
-                  <p className="mt-1 text-slate-400">{event.summary}</p>
-                ) : null}
-                {event.fileChange ? (
-                  <FileChangeSummary fileChange={event.fileChange} compact />
-                ) : null}
-              </li>
-            ))}
-          </ol>
-        )}
-      </div>
-      <RestoreCheckpointForm
-        spriteName={spriteName}
-        checkpointId={checkpoint.id}
-      />
-    </li>
-  );
-}
-
-function AgentRunTimelinePanel({
-  selectedSprite,
-  timeline,
-}: {
-  selectedSprite: DashboardSprite;
-  timeline: AgentRunTimeline;
-}) {
-  const latestRun = timeline.runs[0] ?? null;
-
-  return (
-    <section className="overflow-hidden rounded-[2rem] border border-white/70 bg-white/85 shadow-[0_24px_90px_rgba(15,23,42,0.10)] backdrop-blur">
-      <div className="border-b border-slate-200 p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500">
-              Agent run timeline
-            </p>
-            <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-950">
-              What happened inside {selectedSprite.name}?
-            </h2>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-              This is the work-history layer: runs, commands, file changes,
-              failures, and checkpoint moments. Today it supports manual events;
-              next it can be written by an agent runner.
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-3 sm:min-w-72">
-            <Info label="Runs" value={String(timeline.runs.length)} />
-            <Info label="Events" value={String(timeline.events.length)} />
-          </div>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-5 p-5">
-        <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
-                Latest activity
-              </p>
-              <p className="mt-2 text-lg font-bold text-slate-950">
-                {latestRun ? latestRun.title : "No runs yet"}
-              </p>
-            </div>
-            {latestRun ? <RunStatusPill status={latestRun.status} /> : null}
-          </div>
-
-          {timeline.runs.length === 0 ? (
-            <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm leading-6 text-slate-600">
-              No agent run events have been recorded for this Sprite yet. Seed a
-              manual event to test the timeline, or wire an agent runner to
-              write here when it starts commands, changes files, or creates a
-              checkpoint.
-            </div>
-          ) : (
-            <ol className="mt-4 max-h-[36rem] space-y-4 overflow-y-auto pr-1">
-              {timeline.runs.map((run) => (
-                <AgentRunGroupItem key={run.runId} run={run} />
-              ))}
-            </ol>
-          )}
-        </div>
-
-        <details className="rounded-3xl border border-slate-200 bg-white shadow-sm">
-          <summary className="cursor-pointer list-none p-4 text-sm font-bold text-slate-700 transition hover:text-slate-950 [&::-webkit-details-marker]:hidden">
-            Seed a manual event
-            <span className="ml-2 font-normal text-slate-500">
-              For dogfooding. A real agent runner can post to the same route
-              later.
-            </span>
-          </summary>
-          <div className="px-4 pb-4">
-            <AgentRunEventForm spriteName={selectedSprite.name} />
-          </div>
-        </details>
-      </div>
-    </section>
-  );
-}
-
-function AgentRunGroupItem({ run }: { run: AgentRunGroup }) {
-  return (
-    <li className="rounded-3xl border border-slate-200 bg-white p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="truncate text-base font-semibold text-slate-950">
-              {run.title}
-            </h3>
-            <RunStatusPill status={run.status} />
-          </div>
-          <p className="mt-1 truncate font-mono text-xs text-slate-500">
-            {run.runId}
-          </p>
-        </div>
-        <div className="text-right text-xs text-slate-500">
-          <p>Started {formatDate(run.startedAt)}</p>
-          <p>Updated {formatDate(run.updatedAt)}</p>
-        </div>
-      </div>
-
-      <ol className="mt-4 space-y-3 border-l border-slate-200 pl-4">
-        {run.events.map((event) => (
-          <AgentRunEventItem key={event.id} event={event} />
-        ))}
-      </ol>
-    </li>
-  );
-}
-
-function AgentRunEventItem({ event }: { event: AgentRunEvent }) {
-  return (
-    <li className="relative">
-      <span
-        className={`absolute -left-[1.35rem] top-1.5 h-3 w-3 rounded-full border-2 border-white ${getRunEventDotClass(event.status)}`}
-        aria-hidden="true"
-      />
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <p className="text-sm font-semibold text-slate-950">{event.label}</p>
-          <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-500">
-            {event.type.replaceAll("_", " ")}
-          </p>
-        </div>
-        <span className="text-xs text-slate-500">
-          {formatDate(event.createdAt)}
-        </span>
-      </div>
-      {event.summary ? (
-        <p className="mt-2 text-sm leading-6 text-slate-600">{event.summary}</p>
-      ) : null}
-      {event.fileChange ? (
-        <FileChangeSummary fileChange={event.fileChange} />
-      ) : null}
-      {Object.keys(event.metadata).length > 0 ? (
-        <div className="mt-2 flex flex-wrap gap-2">
-          {Object.entries(event.metadata).map(([key, value]) => (
-            <span
-              key={key}
-              className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600"
-            >
-              {key}: {String(value)}
-            </span>
-          ))}
-        </div>
-      ) : null}
-    </li>
-  );
-}
-
-function FileChangeSummary({
-  fileChange,
-  compact = false,
-}: {
-  fileChange: AgentRunFileChange;
-  compact?: boolean;
-}) {
-  const visibleFiles = fileChange.files.slice(0, compact ? 4 : 8);
-  const hiddenCount = fileChange.fileCount - visibleFiles.length;
-
-  return (
-    <div
-      className={
-        compact
-          ? "mt-2 rounded-2xl border border-slate-800 bg-slate-950 p-3"
-          : "mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3"
-      }
-    >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p
-          className={
-            compact
-              ? "text-xs font-bold uppercase tracking-[0.16em] text-slate-500"
-              : "text-xs font-bold uppercase tracking-[0.16em] text-slate-500"
-          }
-        >
-          {fileChange.fileCount} file
-          {fileChange.fileCount === 1 ? "" : "s"} changed
-        </p>
-        {fileChange.diffStat ? (
-          <span
-            className={
-              compact
-                ? "font-mono text-xs text-slate-500"
-                : "font-mono text-xs text-slate-500"
-            }
-          >
-            {fileChange.diffStat}
-          </span>
-        ) : null}
-      </div>
-
-      <div className="mt-2 flex flex-wrap gap-2">
-        {visibleFiles.map((file, index) => (
-          <span
-            key={`${file.status}-${file.path}-${index}`}
-            className={
-              compact
-                ? "rounded-full border border-slate-800 bg-slate-900 px-2.5 py-1 font-mono text-xs font-semibold text-slate-300"
-                : "rounded-full border border-slate-200 bg-white px-2.5 py-1 font-mono text-xs font-semibold text-slate-600"
-            }
-            title={file.redacted ? "Secret-like path redacted" : file.path}
-          >
-            {file.status} {file.path}
-          </span>
-        ))}
-        {hiddenCount > 0 ? (
-          <span
-            className={
-              compact
-                ? "rounded-full border border-slate-800 bg-slate-900 px-2.5 py-1 text-xs font-bold text-slate-500"
-                : "rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-500"
-            }
-          >
-            +{hiddenCount} more
-          </span>
-        ) : null}
-      </div>
-
-      {fileChange.redactedCount > 0 ? (
-        <p
-          className={
-            compact
-              ? "mt-2 text-xs text-amber-200"
-              : "mt-2 text-xs text-amber-700"
-          }
-        >
-          {fileChange.redactedCount} secret-like path
-          {fileChange.redactedCount === 1 ? "" : "s"} redacted before storage.
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-function RunStatusPill({ status }: { status: string }) {
-  const classes =
-    status === "success"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-      : status === "warning"
-        ? "border-amber-200 bg-amber-50 text-amber-900"
-        : status === "error"
-          ? "border-red-200 bg-red-50 text-red-900"
-          : "border-slate-200 bg-slate-100 text-slate-700";
-
-  return (
-    <span className={`rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] ${classes}`}>
-      {status}
-    </span>
-  );
-}
-
-function getRunEventDotClass(status: string) {
-  if (status === "success") return "bg-emerald-500";
-  if (status === "warning") return "bg-amber-500";
-  if (status === "error") return "bg-red-500";
-  return "bg-slate-400";
-}
-
-function SpriteCard({
-  sprite,
-  checkpointsLoaded,
-}: {
-  sprite: DashboardSprite;
-  checkpointsLoaded: boolean;
-}) {
-  const latestCheckpoint = sprite.checkpoints[0] ?? null;
-
-  return (
-    <article className="overflow-hidden rounded-[2rem] border border-white/70 bg-white/80 shadow-[0_20px_80px_rgba(15,23,42,0.08)] backdrop-blur">
-      <div className="border-b border-slate-200 p-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-lg font-bold tracking-tight text-slate-950">
-                {sprite.name}
-              </h2>
-              <StatusPill status={sprite.status} />
-            </div>
-            <p className="mt-1 text-sm text-slate-500">{sprite.organization}</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <a
-              className="rounded-full border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 transition hover:border-slate-950 hover:text-slate-950"
-              href={getSpriteDashboardUrl(sprite)}
-              target="_blank"
-              rel="noreferrer"
-              title={`Open ${sprite.name} in the Sprites dashboard`}
-            >
-              Manage in Sprites
-            </a>
-            {sprite.url ? (
-              <a
-                className="rounded-full border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 transition hover:border-slate-950 hover:text-slate-950"
-                href={sprite.url}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Open app
-              </a>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="mt-5 grid gap-3 sm:grid-cols-3">
-          <Info label="URL auth" value={sprite.url_settings?.auth || "unknown"} />
-          <Info label="Last running" value={formatDate(sprite.last_running_at)} />
-          <Info label="Last warming" value={formatDate(sprite.last_warming_at)} />
-        </div>
-      </div>
-
-      <div className="grid gap-5 p-5 xl:grid-cols-[0.9fr_1.1fr]">
-        <div className="space-y-4">
-          <SleepBox sleep={sprite.sleep} />
-          <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
-              Health check
-            </p>
-            <p className="mt-2 text-base font-bold text-slate-950">
-              {sprite.health.label}
-            </p>
-            <p className="mt-1 text-sm leading-6 text-slate-600">
-              {sprite.health.detail}
-            </p>
-          </div>
-        </div>
-
-        <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
-            Operations snapshot
-          </p>
-          {checkpointsLoaded ? (
-            <dl className="mt-3 space-y-2">
-              <InfoRow
-                label="Checkpoints"
-                value={String(sprite.checkpoints.length)}
-              />
-              <InfoRow label="Latest" value={latestCheckpoint?.id || "None"} />
-              <InfoRow
-                label="Created"
-                value={latestCheckpoint ? formatDate(latestCheckpoint.create_time) : "Never"}
-              />
-            </dl>
-          ) : (
-            <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3 text-sm leading-6 text-slate-600">
-              Checkpoints load in the inspector above only for the selected
-              Sprite, so a large fleet does not fire a checkpoint request for
-              every environment.
-            </div>
-          )}
-          {checkpointsLoaded && sprite.checkpointError ? (
-            <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm leading-6 text-red-900">
-              {sprite.checkpointError}
-            </p>
-          ) : checkpointsLoaded && latestCheckpoint ? (
-            <p className="mt-4 rounded-2xl border border-slate-200 bg-white p-3 text-sm leading-6 text-slate-600">
-              Latest checkpoint:{" "}
-              <span className="font-semibold text-slate-950">
-                {latestCheckpoint.comment || "No comment"}
-              </span>
-            </p>
-          ) : checkpointsLoaded ? (
-            <p className="mt-4 rounded-2xl border border-slate-200 bg-white p-3 text-sm leading-6 text-slate-600">
-              No checkpoints yet. Use the inspector above when this Sprite has
-              a timeline to review.
-            </p>
-          ) : null}
-        </div>
-      </div>
-    </article>
-  );
-}
-
 function getStatusGroupClasses(group: SpriteStatusGroup<DashboardSprite>["key"]) {
   if (group === "running") {
     return "border-emerald-200 bg-emerald-50 text-emerald-950";
@@ -1029,30 +545,6 @@ function getStatusDotClasses(status: string) {
   return "bg-amber-500";
 }
 
-function Info({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-      <p className="truncate text-[0.68rem] font-bold uppercase tracking-[0.08em] text-slate-500" title={label}>
-        {label}
-      </p>
-      <p className="mt-1 truncate text-sm font-bold text-slate-950" title={value}>
-        {value}
-      </p>
-    </div>
-  );
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-baseline justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm">
-      <dt className="shrink-0 text-slate-500">{label}</dt>
-      <dd className="truncate font-bold text-slate-950" title={value}>
-        {value}
-      </dd>
-    </div>
-  );
-}
-
 function DarkInfo({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0 rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3">
@@ -1063,49 +555,6 @@ function DarkInfo({ label, value }: { label: string; value: string }) {
         {value}
       </p>
     </div>
-  );
-}
-
-function SleepBox({ sleep }: { sleep: SleepInference }) {
-  const tone =
-    sleep.tone === "good"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-950"
-      : sleep.tone === "warn"
-        ? "border-amber-200 bg-amber-50 text-amber-950"
-        : "border-slate-200 bg-slate-50 text-slate-950";
-
-  return (
-    <div className={`rounded-3xl border p-4 ${tone}`}>
-      <p className="text-xs font-bold uppercase tracking-[0.18em] opacity-70">
-        Why this state?
-      </p>
-      <p className="mt-2 text-base font-bold">{sleep.label}</p>
-      <ul className="mt-3 space-y-2 text-sm leading-6">
-        {sleep.evidence.map((item) => (
-          <li key={item} className="flex gap-2">
-            <span aria-hidden="true">-</span>
-            <span>{item}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function StatusPill({ status }: { status: string }) {
-  const classes =
-    status === "running"
-      ? "bg-emerald-100 text-emerald-900 border-emerald-200"
-      : status === "warm"
-        ? "bg-lime-100 text-lime-900 border-lime-200"
-        : status === "cold"
-          ? "bg-slate-100 text-slate-700 border-slate-200"
-          : "bg-amber-100 text-amber-900 border-amber-200";
-
-  return (
-    <span className={`rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] ${classes}`}>
-      {status}
-    </span>
   );
 }
 

@@ -553,18 +553,22 @@ function parseCheckpointId(message: string): string | null {
 }
 
 export async function getDashboardData(
-  checkpointSpriteName?: string | null
+  checkpointSpriteName?: string | null,
+  options?: { loadCheckpoints?: boolean }
 ): Promise<DashboardData> {
   const fetchedAtDate = new Date();
   const fetchedAt = fetchedAtDate.toISOString();
   const source = getSpriteDataSource();
   const auth = getSpriteAuthStatus();
+  const loadCheckpoints = options?.loadCheckpoints ?? true;
   try {
     const list = await runSpriteApi<SpriteListResponse>("/v1/sprites/");
-    const selectedCheckpointSpriteName =
-      list.sprites.find((sprite) => sprite.name === checkpointSpriteName)?.name ??
-      list.sprites[0]?.name ??
-      null;
+    const selectedCheckpointSpriteName = loadCheckpoints
+      ? (list.sprites.find((sprite) => sprite.name === checkpointSpriteName)
+          ?.name ??
+        list.sprites[0]?.name ??
+        null)
+      : null;
     const sprites = await Promise.all(
       list.sprites.map(async (sprite) => {
         const checkpointRequest: Promise<{
