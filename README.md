@@ -157,6 +157,19 @@ npm start
 
 If you override the port, make sure the Sprite URL proxy can reach it. Running the app on `3000` may work inside the Sprite but fail from the public URL.
 
+## Let Your Agent Write The Timeline
+
+Any coding agent (Codex, Claude Code, a custom runner) can record its runs,
+file changes, and outcomes into the Workbench timeline instead of using the
+manual seed form. See [docs/AGENT_RUNNER.md](docs/AGENT_RUNNER.md) and
+[scripts/record-run-event.mjs](scripts/record-run-event.mjs):
+
+```bash
+export WORKBENCH_URL="http://localhost:1340"
+export SPRITE_NAME="recallmem"
+node scripts/record-run-event.mjs start "Fix login redirect bug"
+```
+
 ## Run The Checks
 
 Before trusting a change:
