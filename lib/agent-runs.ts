@@ -279,24 +279,40 @@ export function getEventsSinceCheckpoint(
   return { eventCount: since.length, fileCount, events: since };
 }
 
+/**
+ * The set of checkpoint ids that already have at least one linked timeline
+ * event. Used by passive detection to avoid re-recording observed events.
+ */
+export function getLinkedCheckpointIds(events: AgentRunEvent[]): Set<string> {
+  const ids = new Set<string>();
+  for (const event of events) {
+    const id = event.metadata.checkpoint_id;
+    if (typeof id === "string" && id) ids.add(id);
+  }
+  return ids;
+}
+
 export function buildCheckpointCreatedEventInput({
   spriteName,
   checkpointId,
   comment,
   message,
   appHealth,
+  source = "workbench",
 }: {
   spriteName: string;
   checkpointId: string | null;
   comment?: string | null;
   message?: string | null;
   appHealth?: string | null;
+  source?: string;
 }): AgentRunEventInput {
   const label = checkpointId
     ? `Checkpoint ${checkpointId} created`
     : "Checkpoint created";
   const normalizedComment = comment?.trim();
   const normalizedHealth = appHealth?.trim();
+  const observed = source === "observed";
 
   return {
     spriteName,
@@ -304,11 +320,13 @@ export function buildCheckpointCreatedEventInput({
     label,
     summary: normalizedComment
       ? "Created from Sprite Agent Workbench with a checkpoint comment."
-      : message || "Created from Sprite Agent Workbench.",
+      : observed
+        ? "Observed by Workbench — created outside the dashboard, no recorded task context."
+        : message || "Created from Sprite Agent Workbench.",
     status: "success",
     metadata: {
       checkpoint_id: checkpointId || "unknown",
-      source: "workbench",
+      source,
       has_comment: Boolean(normalizedComment),
       ...(normalizedHealth ? { app_health: normalizedHealth } : {}),
     },

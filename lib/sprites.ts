@@ -12,6 +12,12 @@ import {
   observeCostExposure,
   type CostExposureSummary,
 } from "./cost-ledger";
+import {
+  buildCheckpointCreatedEventInput,
+  getLinkedCheckpointIds,
+  readAgentRunEventsForSprite,
+  recordAgentRunEvent,
+} from "./agent-runs";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_SPRITES_API_BASE_URL = "https://api.sprites.dev";
@@ -599,6 +605,20 @@ export async function getDashboardData(
       observedAt: fetchedAtDate,
     });
 
+    // Passive checkpoint detection: any checkpoint we loaded that has no
+    // linked timeline event gets an "observed" checkpoint_created, so
+    // checkpoints made outside the Workbench (raw `sprite checkpoint create`,
+    // the Sprites web UI) are never contextless mystery hashes. Best-effort —
+    // never let a ledger write break the dashboard.
+    if (loadCheckpoints && selectedCheckpointSpriteName) {
+      const selected = sprites.find(
+        (sprite) => sprite.name === selectedCheckpointSpriteName
+      );
+      if (selected) {
+        await recordObservedCheckpoints(selected).catch(() => {});
+      }
+    }
+
     return {
       ok: true,
       source,
@@ -643,6 +663,33 @@ export async function getDashboardData(
         hint: getSetupHint(source),
       },
     };
+  }
+}
+
+// Read a generous window so an old checkpoint's linked events don't age out
+// and cause a duplicate observed event on a later refresh.
+const OBSERVED_LINK_LOOKBACK = 1000;
+
+async function recordObservedCheckpoints(sprite: DashboardSprite): Promise<void> {
+  if (sprite.checkpointError || sprite.checkpoints.length === 0) return;
+
+  const events = await readAgentRunEventsForSprite(
+    sprite.name,
+    OBSERVED_LINK_LOOKBACK
+  );
+  const linked = getLinkedCheckpointIds(events);
+
+  for (const checkpoint of sprite.checkpoints) {
+    if (linked.has(checkpoint.id)) continue;
+    await recordAgentRunEvent(
+      buildCheckpointCreatedEventInput({
+        spriteName: sprite.name,
+        checkpointId: checkpoint.id,
+        comment: checkpoint.comment ?? null,
+        appHealth: sprite.health.label,
+        source: "observed",
+      })
+    );
   }
 }
 

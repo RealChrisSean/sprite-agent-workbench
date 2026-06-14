@@ -9,6 +9,7 @@ import {
   buildVerificationEventInput,
   getCheckpointContextEvents,
   getEventsSinceCheckpoint,
+  getLinkedCheckpointIds,
   getAgentRunTimeline,
   readAgentRunEventsForSprite,
   recordAgentRunEvent,
@@ -191,6 +192,40 @@ describe("agent run event storage", () => {
       },
     });
     expect(event.summary).not.toContain("before risky deploy");
+  });
+
+  it("marks observed checkpoints with source=observed and a plain summary", () => {
+    const event = validateAgentRunEventInput(
+      buildCheckpointCreatedEventInput({
+        spriteName: "sprite-agent-workbench",
+        checkpointId: "v9",
+        comment: null,
+        appHealth: "200 OK",
+        source: "observed",
+      }),
+      new Date("2026-06-10T12:00:00Z")
+    );
+    expect(event.metadata).toMatchObject({
+      checkpoint_id: "v9",
+      source: "observed",
+      app_health: "200 OK",
+    });
+    expect(event.summary).toContain("Observed by Workbench");
+  });
+
+  it("collects the checkpoint ids that already have linked events", () => {
+    const events = [
+      makeEventAt("2026-06-10T12:00:00Z", "checkpoint_created"),
+      makeEventAt("2026-06-10T12:01:00Z", "file_changed"),
+    ];
+    events[0].metadata = { checkpoint_id: "v9" };
+    events[1].metadata = { checkpoint_id: "v8" };
+
+    const linked = getLinkedCheckpointIds(events);
+    expect(linked.has("v9")).toBe(true);
+    expect(linked.has("v8")).toBe(true);
+    expect(linked.has("v7")).toBe(false);
+    expect(linked.size).toBe(2);
   });
 
   it("links the safety checkpoint id on restore events when one was created", () => {
