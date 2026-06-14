@@ -8,7 +8,6 @@ import {
   type AgentRunTimeline,
 } from "@/lib/agent-runs";
 import {
-  formatDate,
   getDashboardData,
   getSpriteDashboardUrl,
   type DashboardSprite,
@@ -18,6 +17,7 @@ import {
 import Link from "next/link";
 import { AgentRunEventForm } from "../../AgentRunEventForm";
 import { CheckpointCreateForm } from "../../CheckpointCreateForm";
+import { LocalTime } from "../../LocalTime";
 import { RefreshButton } from "../../RefreshButton";
 import { RestoreCheckpointForm } from "../../RestoreCheckpointForm";
 import { SpriteCheckpointSelect } from "../../SpriteCheckpointSelect";
@@ -114,11 +114,11 @@ export default async function SpriteDetailPage({
               />
               <Info
                 label="Last running"
-                value={formatDate(sprite.last_running_at)}
+                value={<LocalTime iso={sprite.last_running_at} />}
               />
               <Info
                 label="Last warming"
-                value={formatDate(sprite.last_warming_at)}
+                value={<LocalTime iso={sprite.last_warming_at} />}
               />
             </div>
           ) : null}
@@ -192,7 +192,9 @@ function CheckpointsPanel({
           </div>
           <div className="flex flex-wrap items-center gap-3 text-sm text-slate-400">
             <span>{sprite.checkpoints.length} checkpoints</span>
-            <span>Last running {formatDate(sprite.last_running_at)}</span>
+            <span>
+              Last running <LocalTime iso={sprite.last_running_at} />
+            </span>
           </div>
         </div>
       </div>
@@ -267,7 +269,7 @@ function CheckpointListItem({
           {checkpoint.id}
         </span>
         <span className="text-xs text-slate-500">
-          {formatDate(checkpoint.create_time)}
+          <LocalTime iso={checkpoint.create_time} />
         </span>
       </div>
       <p className="mt-2 text-sm text-slate-300">
@@ -294,7 +296,7 @@ function CheckpointListItem({
                     {event.label}
                   </span>
                   <span className="text-xs text-slate-500">
-                    {formatDate(event.createdAt)}
+                    <LocalTime iso={event.createdAt} />
                   </span>
                 </div>
                 {event.summary ? (
@@ -421,8 +423,12 @@ function AgentRunGroupItem({ run }: { run: AgentRunGroup }) {
           </p>
         </div>
         <div className="text-right text-xs text-slate-500">
-          <p>Started {formatDate(run.startedAt)}</p>
-          <p>Updated {formatDate(run.updatedAt)}</p>
+          <p>
+            Started <LocalTime iso={run.startedAt} />
+          </p>
+          <p>
+            Updated <LocalTime iso={run.updatedAt} />
+          </p>
         </div>
       </div>
 
@@ -450,7 +456,7 @@ function AgentRunEventItem({ event }: { event: AgentRunEvent }) {
           </p>
         </div>
         <span className="text-xs text-slate-500">
-          {formatDate(event.createdAt)}
+          <LocalTime iso={event.createdAt} />
         </span>
       </div>
       {event.summary ? (
@@ -572,13 +578,22 @@ function getRunEventDotClass(status: string) {
   return "bg-slate-400";
 }
 
-function Info({ label, value }: { label: string; value: string }) {
+function Info({
+  label,
+  value,
+}: {
+  label: string;
+  value: React.ReactNode;
+}) {
   return (
     <div className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
       <p className="truncate text-[0.68rem] font-bold uppercase tracking-[0.08em] text-slate-500" title={label}>
         {label}
       </p>
-      <p className="mt-1 truncate text-sm font-bold text-slate-950" title={value}>
+      <p
+        className="mt-1 truncate text-sm font-bold text-slate-950"
+        title={typeof value === "string" ? value : undefined}
+      >
         {value}
       </p>
     </div>

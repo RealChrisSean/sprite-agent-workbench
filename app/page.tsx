@@ -4,7 +4,6 @@ import type {
   SpriteExposureSummary,
 } from "@/lib/cost-ledger";
 import {
-  formatDate,
   getDashboardData,
   getSpriteDashboardUrl,
   getSpriteStatusGroups,
@@ -18,6 +17,7 @@ import {
 } from "@/lib/sprite-auth";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { LocalTime } from "./LocalTime";
 import { RefreshButton } from "./RefreshButton";
 import { StatusPill } from "./StatusPill";
 import { TestConnectionButton } from "./TestConnectionButton";
@@ -58,7 +58,7 @@ export default async function Home({
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <span className="font-mono text-sm text-slate-600">
-              Refreshed {formatDate(data.fetchedAt)}
+              Refreshed <LocalTime iso={data.fetchedAt} />
             </span>
             <RefreshButton />
           </div>
@@ -322,7 +322,8 @@ function SpriteRoster({ sprites }: { sprites: DashboardSprite[] }) {
                 <StatusPill status={sprite.status} />
               </div>
               <p className="mt-0.5 truncate text-xs text-slate-500">
-                Last running {formatDate(sprite.last_running_at)} · URL auth{" "}
+                Last running <LocalTime iso={sprite.last_running_at} /> · URL
+                auth{" "}
                 {sprite.url_settings?.auth || "unknown"}
               </p>
             </div>
@@ -395,7 +396,7 @@ function CostExposurePanel({
           <div className="rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm text-slate-400">
             Window starts{" "}
             <span className="font-bold text-slate-100">
-              {formatDate(exposure.windowStartedAt)}
+              <LocalTime iso={exposure.windowStartedAt} />
             </span>
           </div>
         </div>
