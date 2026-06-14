@@ -71,7 +71,11 @@ export async function POST(request: Request) {
       }
     }
 
+    // Time only the restore itself; the optional safety checkpoint above is
+    // separately auditable and should not inflate the reported restore time.
+    const startedAt = Date.now();
     const result = await restoreSpriteCheckpoint(spriteName, checkpointId);
+    const durationMs = Date.now() - startedAt;
 
     let runEventId: string | null = null;
     let runEventError: string | null = null;
@@ -82,6 +86,7 @@ export async function POST(request: Request) {
           checkpointId: result.checkpointId,
           message: result.message,
           safetyCheckpointId,
+          durationMs,
         })
       );
       runEventId = runEvent.id;
@@ -95,6 +100,7 @@ export async function POST(request: Request) {
       message: result.message,
       checkpointId: result.checkpointId,
       safetyCheckpointId,
+      durationMs,
       runEventId,
       runEventError,
       events: result.events,

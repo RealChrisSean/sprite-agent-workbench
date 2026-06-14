@@ -12,14 +12,21 @@
 //   start <label> [summary]          Record run_started
 //   files [summary] [--ref <ref>]    Record file_changed from `git diff
 //                                    --name-status <ref>` (default: HEAD)
+//   verify pass|fail [summary]       Record a verification result (passing
+//                                    reads green, failing reads red)
 //   complete <label> [summary]       Record run_completed
 //   fail <label> [summary]           Record run_failed
 //   event <type> <label> [summary]   Record any supported event type
 //
+// Global flag (any command):
+//   --checkpoint <id>   Link the event to a checkpoint so it appears in that
+//                       checkpoint's "Known context" on the Sprite page.
+//
 // Examples:
 //   SPRITE_NAME=recallmem node scripts/record-run-event.mjs start "Fix login bug"
 //   RUN_ID=run-2026... node scripts/record-run-event.mjs files "Applied fix"
-//   RUN_ID=run-2026... node scripts/record-run-event.mjs complete "Fix login bug"
+//   RUN_ID=run-2026... node scripts/record-run-event.mjs verify pass "Smoke test green"
+//   node scripts/record-run-event.mjs complete "Fix login bug" --checkpoint v12
 
 import { execFileSync } from "node:child_process";
 
@@ -32,15 +39,17 @@ function usage(message) {
   if (message) console.error(`Error: ${message}\n`);
   console.error(
     [
-      "Usage: record-run-event.mjs <command> [...args]",
+      "Usage: record-run-event.mjs <command> [...args] [--checkpoint <id>]",
       "",
       "Commands:",
       "  start <label> [summary]",
       "  files [summary] [--ref <ref>]",
+      "  verify pass|fail [summary]",
       "  complete <label> [summary]",
       "  fail <label> [summary]",
       "  event <type> <label> [summary]",
       "",
+      "Global flag: --checkpoint <id>  (link the event to a checkpoint)",
       "Env: WORKBENCH_URL, SPRITE_NAME (required), RUN_ID (optional)",
     ].join("\n")
   );
@@ -98,10 +107,21 @@ function changedFilesFromGit(ref) {
   return { files, diffStat: statLine.trim().slice(0, 160) || undefined };
 }
 
+function extractFlag(args, flag) {
+  const i = args.indexOf(flag);
+  if (i === -1) return { value: undefined, rest: args };
+  const value = args[i + 1];
+  const rest = args.filter((_, index) => index !== i && index !== i + 1);
+  return { value, rest };
+}
+
 async function main() {
-  const [command, ...rest] = process.argv.slice(2);
+  const [command, ...rawRest] = process.argv.slice(2);
   if (!command) usage();
   if (!SPRITE_NAME) usage("SPRITE_NAME is required.");
+
+  // --checkpoint applies to any command; strip it before reading positionals.
+  const { value: checkpointId, rest } = extractFlag(rawRest, "--checkpoint");
 
   let payload;
   if (command === "start") {
@@ -116,18 +136,28 @@ async function main() {
     const [label, summary] = rest;
     if (!label) usage("fail needs a label.");
     payload = { type: "run_failed", label, summary, status: "error" };
+  } else if (command === "verify") {
+    const [verdict, summary] = rest;
+    if (verdict !== "pass" && verdict !== "fail") {
+      usage("verify needs 'pass' or 'fail'.");
+    }
+    const passing = verdict === "pass";
+    payload = {
+      type: "command_finished",
+      label: passing ? "Verification: passing" : "Verification: failing",
+      summary,
+      status: passing ? "success" : "error",
+      metadata: { source: "runner", verification: passing ? "pass" : "fail" },
+    };
   } else if (command === "event") {
     const [type, label, summary] = rest;
     if (!type || !label) usage("event needs a type and a label.");
     payload = { type, label, summary };
   } else if (command === "files") {
-    const refFlag = rest.indexOf("--ref");
-    const ref = refFlag >= 0 ? rest[refFlag + 1] : "HEAD";
-    const positional = rest.filter(
-      (arg, index) => index !== refFlag && index !== refFlag + 1
-    );
+    const { value: refValue, rest: positional } = extractFlag(rest, "--ref");
+    const ref = refValue || "HEAD";
     const summary = positional[0];
-    const { files, diffStat } = changedFilesFromGit(ref || "HEAD");
+    const { files, diffStat } = changedFilesFromGit(ref);
     if (files.length === 0) {
       console.log("No changed files detected; nothing recorded.");
       return;
@@ -144,6 +174,10 @@ async function main() {
     };
   } else {
     usage(`Unknown command: ${command}`);
+  }
+
+  if (checkpointId) {
+    payload.metadata = { ...(payload.metadata || {}), checkpoint_id: checkpointId };
   }
 
   const body = await postEvent(payload);

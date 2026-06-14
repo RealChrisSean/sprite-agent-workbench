@@ -3,7 +3,13 @@
 import { useRouter } from "next/navigation";
 import { FormEvent, useState, useTransition } from "react";
 
-export function CheckpointCreateForm({ spriteName }: { spriteName: string }) {
+export function CheckpointCreateForm({
+  spriteName,
+  appHealth,
+}: {
+  spriteName: string;
+  appHealth?: string | null;
+}) {
   const router = useRouter();
   const [comment, setComment] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -24,6 +30,7 @@ export function CheckpointCreateForm({ spriteName }: { spriteName: string }) {
         body: JSON.stringify({
           spriteName,
           comment,
+          ...(appHealth ? { appHealth } : {}),
         }),
       });
       const body = (await res.json()) as {

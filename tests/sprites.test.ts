@@ -646,6 +646,7 @@ describe("checkpoint creation route", () => {
         body: JSON.stringify({
           spriteName: "sprite-agent-workbench",
           comment: "clean start",
+          appHealth: "200 OK",
         }),
       })
     );
@@ -676,6 +677,7 @@ describe("checkpoint creation route", () => {
         checkpoint_id: "v9",
         source: "workbench",
         has_comment: true,
+        app_health: "200 OK",
       },
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -777,6 +779,7 @@ describe("checkpoint restore route", () => {
         checkpoint_id: "v9",
         restored_checkpoint_id: "v9",
         source: "workbench",
+        duration_ms: expect.any(Number),
       },
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);

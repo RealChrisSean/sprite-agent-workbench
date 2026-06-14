@@ -247,21 +247,56 @@ export function getCheckpointContextEvents(
     .slice(0, Math.max(1, limit));
 }
 
+export interface CheckpointOverwriteImpact {
+  eventCount: number;
+  fileCount: number;
+  events: AgentRunEvent[];
+}
+
+/**
+ * Recorded work that happened AFTER a checkpoint was created — i.e. what a
+ * restore back to that checkpoint would discard. Counts only Workbench
+ * timeline events (not the raw filesystem, which the Workbench cannot
+ * enumerate), so callers should phrase the summary as "recorded activity".
+ */
+export function getEventsSinceCheckpoint(
+  events: AgentRunEvent[],
+  createTime: string
+): CheckpointOverwriteImpact {
+  const checkpointTime = new Date(createTime).getTime();
+  if (Number.isNaN(checkpointTime)) {
+    return { eventCount: 0, fileCount: 0, events: [] };
+  }
+
+  const since = events.filter(
+    (event) => new Date(event.createdAt).getTime() > checkpointTime
+  );
+  const fileCount = since.reduce(
+    (total, event) => total + (event.fileChange?.fileCount ?? 0),
+    0
+  );
+
+  return { eventCount: since.length, fileCount, events: since };
+}
+
 export function buildCheckpointCreatedEventInput({
   spriteName,
   checkpointId,
   comment,
   message,
+  appHealth,
 }: {
   spriteName: string;
   checkpointId: string | null;
   comment?: string | null;
   message?: string | null;
+  appHealth?: string | null;
 }): AgentRunEventInput {
   const label = checkpointId
     ? `Checkpoint ${checkpointId} created`
     : "Checkpoint created";
   const normalizedComment = comment?.trim();
+  const normalizedHealth = appHealth?.trim();
 
   return {
     spriteName,
@@ -275,6 +310,37 @@ export function buildCheckpointCreatedEventInput({
       checkpoint_id: checkpointId || "unknown",
       source: "workbench",
       has_comment: Boolean(normalizedComment),
+      ...(normalizedHealth ? { app_health: normalizedHealth } : {}),
+    },
+  };
+}
+
+export function buildVerificationEventInput({
+  spriteName,
+  passing,
+  summary,
+  checkpointId,
+  runId,
+}: {
+  spriteName: string;
+  passing: boolean;
+  summary?: string | null;
+  checkpointId?: string | null;
+  runId?: string | null;
+}): AgentRunEventInput {
+  return {
+    spriteName,
+    ...(runId ? { runId } : {}),
+    // Reuse command_finished rather than minting a new event type: the
+    // status carries the pass/fail color, the label carries the meaning.
+    type: "command_finished",
+    label: passing ? "Verification: passing" : "Verification: failing",
+    summary: summary ?? null,
+    status: passing ? "success" : "error",
+    metadata: {
+      source: "workbench",
+      verification: passing ? "pass" : "fail",
+      ...(checkpointId ? { checkpoint_id: checkpointId } : {}),
     },
   };
 }
@@ -284,12 +350,19 @@ export function buildRestorePerformedEventInput({
   checkpointId,
   message,
   safetyCheckpointId,
+  durationMs,
 }: {
   spriteName: string;
   checkpointId: string;
   message?: string | null;
   safetyCheckpointId?: string | null;
+  durationMs?: number | null;
 }): AgentRunEventInput {
+  const hasDuration =
+    typeof durationMs === "number" &&
+    Number.isFinite(durationMs) &&
+    durationMs >= 0;
+
   return {
     spriteName,
     type: "restore_performed",
@@ -303,6 +376,7 @@ export function buildRestorePerformedEventInput({
       ...(safetyCheckpointId
         ? { safety_checkpoint_id: safetyCheckpointId }
         : {}),
+      ...(hasDuration ? { duration_ms: Math.round(durationMs as number) } : {}),
     },
   };
 }

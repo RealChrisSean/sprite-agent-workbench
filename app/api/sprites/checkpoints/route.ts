@@ -23,9 +23,14 @@ export async function POST(request: Request) {
     const body = (await request.json()) as {
       spriteName?: unknown;
       comment?: unknown;
+      appHealth?: unknown;
     };
     const spriteName = validateSpriteNameInput(body.spriteName);
     const comment = validateCheckpointCommentInput(body.comment);
+    const appHealth =
+      typeof body.appHealth === "string"
+        ? body.appHealth.slice(0, 80)
+        : null;
     const result = await createSpriteCheckpoint(spriteName, comment);
 
     let runEventId: string | null = null;
@@ -37,6 +42,7 @@ export async function POST(request: Request) {
           checkpointId: result.checkpointId,
           comment,
           message: result.message,
+          appHealth,
         })
       );
       runEventId = runEvent.id;

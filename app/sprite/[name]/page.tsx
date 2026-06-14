@@ -1,6 +1,7 @@
 import {
   getAgentRunTimeline,
   getCheckpointContextEvents,
+  getEventsSinceCheckpoint,
   type AgentRunEvent,
   type AgentRunFileChange,
   type AgentRunGroup,
@@ -198,7 +199,10 @@ function CheckpointsPanel({
 
       <div className="p-5">
         <div className="mb-4">
-          <CheckpointCreateForm spriteName={sprite.name} />
+          <CheckpointCreateForm
+            spriteName={sprite.name}
+            appHealth={sprite.health.label}
+          />
         </div>
 
         {sprite.checkpointError ? (
@@ -211,18 +215,31 @@ function CheckpointsPanel({
           </p>
         ) : (
           <ol className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
-            {sprite.checkpoints.map((checkpoint) => (
-              <CheckpointListItem
-                key={`${sprite.name}-${checkpoint.id}`}
-                spriteName={sprite.name}
-                checkpoint={checkpoint}
-                contextEvents={
-                  timeline
-                    ? getCheckpointContextEvents(timeline.events, checkpoint.id)
-                    : []
-                }
-              />
-            ))}
+            {sprite.checkpoints.map((checkpoint) => {
+              const overwrite = timeline
+                ? getEventsSinceCheckpoint(
+                    timeline.events,
+                    checkpoint.create_time
+                  )
+                : { eventCount: 0, fileCount: 0, events: [] };
+              return (
+                <CheckpointListItem
+                  key={`${sprite.name}-${checkpoint.id}`}
+                  spriteName={sprite.name}
+                  checkpoint={checkpoint}
+                  contextEvents={
+                    timeline
+                      ? getCheckpointContextEvents(
+                          timeline.events,
+                          checkpoint.id
+                        )
+                      : []
+                  }
+                  overwriteEventCount={overwrite.eventCount}
+                  overwriteFileCount={overwrite.fileCount}
+                />
+              );
+            })}
           </ol>
         )}
       </div>
@@ -234,10 +251,14 @@ function CheckpointListItem({
   spriteName,
   checkpoint,
   contextEvents,
+  overwriteEventCount,
+  overwriteFileCount,
 }: {
   spriteName: string;
   checkpoint: SpriteCheckpoint;
   contextEvents: AgentRunEvent[];
+  overwriteEventCount: number;
+  overwriteFileCount: number;
 }) {
   return (
     <li className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
@@ -265,7 +286,11 @@ function CheckpointListItem({
             {contextEvents.map((event) => (
               <li key={event.id} className="text-sm leading-6 text-slate-300">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-semibold text-lime-100">
+                  <span className="flex items-center gap-2 font-semibold text-lime-100">
+                    <span
+                      className={`h-2.5 w-2.5 shrink-0 rounded-full ${getRunEventDotClass(event.status)}`}
+                      aria-hidden="true"
+                    />
                     {event.label}
                   </span>
                   <span className="text-xs text-slate-500">
@@ -274,6 +299,14 @@ function CheckpointListItem({
                 </div>
                 {event.summary ? (
                   <p className="mt-1 text-slate-400">{event.summary}</p>
+                ) : null}
+                {typeof event.metadata.app_health === "string" ? (
+                  <p className="mt-1 text-xs text-slate-500">
+                    App health at checkpoint:{" "}
+                    <span className="font-semibold text-slate-300">
+                      {event.metadata.app_health}
+                    </span>
+                  </p>
                 ) : null}
                 {event.fileChange ? (
                   <FileChangeSummary fileChange={event.fileChange} compact />
@@ -286,6 +319,8 @@ function CheckpointListItem({
       <RestoreCheckpointForm
         spriteName={spriteName}
         checkpointId={checkpoint.id}
+        overwriteEventCount={overwriteEventCount}
+        overwriteFileCount={overwriteFileCount}
       />
     </li>
   );

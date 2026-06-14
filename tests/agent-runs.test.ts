@@ -6,7 +6,9 @@ import { POST as createRunEventRoute } from "../app/api/runs/events/route";
 import {
   buildCheckpointCreatedEventInput,
   buildRestorePerformedEventInput,
+  buildVerificationEventInput,
   getCheckpointContextEvents,
+  getEventsSinceCheckpoint,
   getAgentRunTimeline,
   readAgentRunEventsForSprite,
   recordAgentRunEvent,
@@ -247,7 +249,148 @@ describe("agent run event storage", () => {
     expect(getCheckpointContextEvents(events, "v9")).toEqual([linked]);
     expect(getCheckpointContextEvents(events, "missing")).toEqual([]);
   });
+
+  it("builds a verification event whose status reflects pass or fail", () => {
+    const passing = validateAgentRunEventInput(
+      buildVerificationEventInput({
+        spriteName: "sprite-agent-workbench",
+        passing: true,
+        summary: "Smoke test green",
+        checkpointId: "v9",
+        runId: "run-abc",
+      }),
+      new Date("2026-06-10T12:00:00Z")
+    );
+    expect(passing).toMatchObject({
+      type: "command_finished",
+      label: "Verification: passing",
+      status: "success",
+      runId: "run-abc",
+      metadata: { verification: "pass", checkpoint_id: "v9" },
+    });
+
+    const failing = validateAgentRunEventInput(
+      buildVerificationEventInput({
+        spriteName: "sprite-agent-workbench",
+        passing: false,
+      }),
+      new Date("2026-06-10T12:00:00Z")
+    );
+    expect(failing).toMatchObject({
+      type: "command_finished",
+      label: "Verification: failing",
+      status: "error",
+      metadata: { verification: "fail" },
+    });
+    expect(failing.metadata).not.toHaveProperty("checkpoint_id");
+  });
+
+  it("links an arbitrary event to a checkpoint via metadata.checkpoint_id", async () => {
+    useRunEventFile();
+
+    const linked = await recordAgentRunEvent(
+      buildVerificationEventInput({
+        spriteName: "sprite-agent-workbench",
+        passing: true,
+        checkpointId: "v9",
+      }),
+      new Date("2026-06-10T12:00:00Z")
+    );
+    const events = await readAgentRunEventsForSprite("sprite-agent-workbench");
+
+    expect(getCheckpointContextEvents(events, "v9")).toEqual([linked]);
+  });
+
+  it("captures app health on a checkpoint_created event when provided", () => {
+    const withHealth = validateAgentRunEventInput(
+      buildCheckpointCreatedEventInput({
+        spriteName: "sprite-agent-workbench",
+        checkpointId: "v9",
+        comment: null,
+        message: "Checkpoint v9 created",
+        appHealth: "200 OK",
+      }),
+      new Date("2026-06-10T12:00:00Z")
+    );
+    expect(withHealth.metadata).toMatchObject({ app_health: "200 OK" });
+
+    const withoutHealth = validateAgentRunEventInput(
+      buildCheckpointCreatedEventInput({
+        spriteName: "sprite-agent-workbench",
+        checkpointId: "v9",
+        comment: null,
+        message: "Checkpoint v9 created",
+      }),
+      new Date("2026-06-10T12:00:00Z")
+    );
+    expect(withoutHealth.metadata).not.toHaveProperty("app_health");
+  });
+
+  it("stamps restore duration on the restore event when provided", () => {
+    const timed = validateAgentRunEventInput(
+      buildRestorePerformedEventInput({
+        spriteName: "sprite-agent-workbench",
+        checkpointId: "v3",
+        durationMs: 1234.6,
+      }),
+      new Date("2026-06-10T12:00:00Z")
+    );
+    expect(timed.metadata).toMatchObject({ duration_ms: 1235 });
+
+    const untimed = validateAgentRunEventInput(
+      buildRestorePerformedEventInput({
+        spriteName: "sprite-agent-workbench",
+        checkpointId: "v3",
+      }),
+      new Date("2026-06-10T12:00:00Z")
+    );
+    expect(untimed.metadata).not.toHaveProperty("duration_ms");
+  });
+
+  it("counts events and files recorded after a checkpoint create_time", () => {
+    const events = [
+      makeEventAt("2026-06-06T12:00:00Z", "run_started"),
+      makeEventAt("2026-06-06T12:00:30Z", "file_changed", 3),
+      makeEventAt("2026-06-06T12:01:00Z", "file_changed", 2),
+    ];
+
+    // Checkpoint created at 12:00:30 — only the 12:01:00 event is "after".
+    const impact = getEventsSinceCheckpoint(events, "2026-06-06T12:00:30Z");
+    expect(impact.eventCount).toBe(1);
+    expect(impact.fileCount).toBe(2);
+
+    // Earlier checkpoint sees both file_changed events.
+    const earlier = getEventsSinceCheckpoint(events, "2026-06-06T11:59:00Z");
+    expect(earlier.eventCount).toBe(3);
+    expect(earlier.fileCount).toBe(5);
+
+    // Unparseable create_time yields zeros rather than throwing.
+    const bad = getEventsSinceCheckpoint(events, "not-a-date");
+    expect(bad).toEqual({ eventCount: 0, fileCount: 0, events: [] });
+  });
 });
+
+function makeEventAt(
+  createdAt: string,
+  type: string,
+  fileCount = 0
+): import("../lib/agent-runs").AgentRunEvent {
+  return {
+    id: `evt-${createdAt}`,
+    runId: "run-1",
+    spriteName: "sprite-agent-workbench",
+    type: type as never,
+    label: type,
+    summary: null,
+    status: "info",
+    metadata: {},
+    fileChange:
+      fileCount > 0
+        ? { files: [], fileCount, redactedCount: 0, diffStat: null }
+        : null,
+    createdAt,
+  };
+}
 
 describe("agent run event route", () => {
   it("records a run event through a same-origin JSON request", async () => {

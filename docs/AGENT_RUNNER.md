@@ -12,9 +12,14 @@ seed events.
 | ------------------------------- | -------------------------------------------- |
 | You start a task                | `start "<task title>"`                       |
 | You finish editing files        | `files "<what changed and why>"`             |
+| A check passes or fails         | `verify pass\|fail "<what was checked>"`     |
 | You create a checkpoint         | `event checkpoint_created "Checkpoint vN"`   |
 | The task succeeds               | `complete "<task title>"`                    |
 | The task fails or is abandoned  | `fail "<task title>" "<what went wrong>"`    |
+
+Add `--checkpoint <id>` to any command to link the event to a checkpoint so it
+appears in that checkpoint's "Known context" on the Sprite page. `verify pass`
+reads green and `verify fail` reads red wherever it renders.
 
 ## Setup (once per task)
 
@@ -43,7 +48,16 @@ export SPRITE_NAME="recallmem"                 # the Sprite this work targets
    Use `--ref origin/main` to describe a whole branch instead of the
    working tree.
 
-3. Close the run:
+3. Record verification (smoke test, health check, type check — whatever the
+   project uses to know it's alive). Link it to the checkpoint you just made
+   so the checkpoint's context shows it:
+
+   ```bash
+   node scripts/record-run-event.mjs verify pass "Smoke test green" --checkpoint v12
+   # or: node scripts/record-run-event.mjs verify fail "Type check failed"
+   ```
+
+4. Close the run:
 
    ```bash
    node scripts/record-run-event.mjs complete "Fix login redirect bug"
