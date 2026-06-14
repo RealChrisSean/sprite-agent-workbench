@@ -2,6 +2,9 @@
   "name": "sprite-agent-workbench",
   "version": "0.1.0",
   "private": true,
+  "bin": {
+    "workbench": "./scripts/workbench.mjs"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
