@@ -6,6 +6,42 @@ Agent Workbench. Following it makes the agent's work show up in the
 Workbench run timeline and checkpoint context automatically — no manual
 seed events.
 
+## Checkpointing (the one command to remember)
+
+To create a checkpoint, run:
+
+```bash
+npx workbench checkpoint "<what you just did>"        # add --verify "npm test"
+```
+
+This takes the Sprites snapshot **and** auto-writes the dashboard context
+(changed files via `git diff`, the intent, and a verification result), all
+linked to the new checkpoint. Do not use bare `sprite checkpoint create` — it
+produces a context-less checkpoint. The Sprite is resolved from the local
+`.sprite` file (override with `--sprite`).
+
+### Optional: fire it automatically with a Claude Code hook
+
+If you'd rather not remember the command, add a Stop hook in
+`.claude/settings.json` so a checkpoint is taken at the end of each turn:
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "npx workbench checkpoint \"end of turn\"" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Other agents (Codex, Cursor) read their own instruction files; the rule in
+`AGENTS.md` tells them to prefer `workbench checkpoint`.
+
 ## What you record
 
 | Moment                          | Command                                      |

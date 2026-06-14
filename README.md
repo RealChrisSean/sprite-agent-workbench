@@ -157,6 +157,23 @@ npm start
 
 If you override the port, make sure the Sprite URL proxy can reach it. Running the app on `3000` may work inside the Sprite but fail from the public URL.
 
+## Checkpoint With Context
+
+Instead of a bare `sprite checkpoint create` (which lands on the dashboard as a
+context-less "mystery hash"), use the `workbench` CLI. It takes the same
+Sprites snapshot and auto-writes the description — changed files, intent, and
+an optional verification result — so every restore point is a confident
+decision, not a gamble:
+
+```bash
+npx workbench checkpoint "before auth refactor"
+npx workbench checkpoint "deps bump" --verify "npm test"
+```
+
+The Sprite is resolved from the local `.sprite` file (override with
+`--sprite`). Checkpoints made any other way still show up — the Workbench
+observes them passively — but only this command records the rich context.
+
 ## Let Your Agent Write The Timeline
 
 Any coding agent (Codex, Claude Code, a custom runner) can record its runs,

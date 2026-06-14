@@ -79,6 +79,21 @@ npm test
 - Before committing, inspect `git status --short --branch`.
 - Do not push or deploy accidental local-only files such as `.sprite`.
 
+## Checkpointing
+
+- To create a checkpoint, run `npx workbench checkpoint "<what changed>"`
+  instead of bare `sprite checkpoint create`. The wrapper takes the same
+  Sprites snapshot and also auto-records the dashboard context (changed files,
+  intent, and verification), so the checkpoint is not a contextless "mystery
+  hash". Add `--verify "<command>"` to record a pass/fail check.
+- The Sprite name is resolved automatically from the local `.sprite` file;
+  pass `--sprite <name>` to override.
+- The same secret-snapshot caution applies: a checkpoint captures the entire
+  filesystem, so avoid checkpointing right after writing secret-bearing files.
+- Checkpoints made any other way (raw CLI, the Sprites web UI) still appear on
+  the dashboard — Workbench observes them passively — but only the wrapper
+  records the rich files/verification context.
+
 ## Sprite Safety Rules
 
 - Do not run `sprite destroy`, `sprite restore`, or destructive remote commands without explicit user approval.
