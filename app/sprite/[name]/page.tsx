@@ -14,6 +14,12 @@ import {
   type SleepInference,
   type SpriteCheckpoint,
 } from "@/lib/sprites";
+import { readMeterSamples } from "@/lib/meter-store";
+import {
+  getRateCardFromEnv,
+  summarizeMeterSamples,
+  type MeterSummary,
+} from "@/lib/metering";
 import Link from "next/link";
 import { AgentRunEventForm } from "../../AgentRunEventForm";
 import { CheckpointCreateForm } from "../../CheckpointCreateForm";
@@ -46,6 +52,11 @@ export default async function SpriteDetailPage({
     ? (data.sprites.find((item) => item.name === spriteName) ?? null)
     : null;
   const timeline = sprite ? await getAgentRunTimeline(sprite.name) : null;
+  const meterSummary = sprite
+    ? summarizeMeterSamples(await readMeterSamples(sprite.name), {
+        rateCard: getRateCardFromEnv(),
+      })
+    : null;
 
   return (
     <main className="min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,#d9f99d_0,#f8fafc_28rem,#e5e7eb_100%)] text-slate-950">
@@ -158,6 +169,8 @@ export default async function SpriteDetailPage({
         ) : (
           <>
             <SleepBox sleep={sprite.sleep} health={sprite.health} />
+
+            {meterSummary ? <MeterPanel summary={meterSummary} /> : null}
 
             <CheckpointsPanel sprite={sprite} timeline={timeline} />
 
@@ -596,6 +609,131 @@ function Info({
       >
         {value}
       </p>
+    </div>
+  );
+}
+
+function MeterPanel({ summary }: { summary: MeterSummary }) {
+  const usd = (value: number) =>
+    value < 0.01 && value > 0 ? `<$0.01` : `$${value.toFixed(2)}`;
+  const confidence = {
+    high: { label: "High confidence", tone: "border-emerald-300 bg-emerald-50 text-emerald-900" },
+    medium: { label: "Medium confidence", tone: "border-amber-300 bg-amber-50 text-amber-900" },
+    low: { label: "Low confidence", tone: "border-red-300 bg-red-50 text-red-900" },
+    "exact-cpu-only": { label: "CPU exact · memory/storage not yet covered", tone: "border-slate-300 bg-slate-100 text-slate-700" },
+  }[summary.confidence];
+
+  const empty = summary.sampleCount < 2;
+
+  return (
+    <section className="overflow-hidden rounded-[2rem] border border-white/70 bg-white/85 shadow-[0_24px_90px_rgba(15,23,42,0.10)] backdrop-blur">
+      <div className="border-b border-slate-200 p-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500">
+              Metered usage · accurate tier
+            </p>
+            <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-950">
+              Near-exact cost from the billed counters
+            </h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+              Read from cgroup <code className="font-mono">cpu.stat</code>,{" "}
+              <code className="font-mono">memory.current</code>, and disk inside the
+              Sprite — the same quantities the platform bills. CPU is exact;
+              memory/storage are integrated from samples.
+            </p>
+          </div>
+          <span className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-bold ${confidence.tone}`}>
+            {confidence.label}
+          </span>
+        </div>
+      </div>
+
+      {empty ? (
+        <div className="p-5">
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
+            No meter samples yet. Run the on-Sprite reader to start measuring:
+            <pre className="mt-3 overflow-x-auto rounded-xl bg-slate-950 p-3 text-xs text-lime-200">
+{`# inside the Sprite
+SPRITE_NAME=${summary.spriteName ?? "<sprite>"} node scripts/sprite-meter.mjs
+
+# local demo (no cgroup needed)
+METER_SOURCE=synthetic METER_INTERVAL_MS=2000 \\
+  SPRITE_NAME=${summary.spriteName ?? "<sprite>"} node scripts/sprite-meter.mjs`}
+            </pre>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-5 p-5">
+          <div className="rounded-3xl border border-slate-200 bg-slate-950 p-5 text-slate-100">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-lime-300">
+              Observed cost so far
+            </p>
+            <p className="mt-2 text-4xl font-black tracking-tight text-white">
+              {usd(summary.cost.total)}
+            </p>
+            <p className="mt-1 text-sm text-slate-400">
+              over {summary.sampleCount} samples ·{" "}
+              {(summary.spanMs / 3_600_000).toFixed(2)}h span ·{" "}
+              {Math.round(summary.coverage * 100)}% integrated coverage
+            </p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <MeterStat label="CPU" usage={`${summary.cpuHours.toFixed(3)} CPU-hr`} cost={usd(summary.cost.cpu)} exact />
+            <MeterStat label="Memory" usage={`${summary.memoryGbHours.toFixed(3)} GB-hr`} cost={usd(summary.cost.memory)} />
+            <MeterStat label="Hot storage" usage={`${summary.hotStorageGbHours.toFixed(3)} GB-hr`} cost={usd(summary.cost.hotStorage)} />
+            <MeterStat label="Cold storage" usage={`${summary.coldStorageGbHours.toFixed(3)} GB-hr`} cost={usd(summary.cost.coldStorage)} />
+          </div>
+
+          {summary.notes.length > 0 ? (
+            <ul className="space-y-1 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900">
+              {summary.notes.map((note) => (
+                <li key={note} className="flex gap-2">
+                  <span aria-hidden="true">!</span>
+                  <span>{note}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
+          <p className="text-xs leading-5 text-slate-500">
+            Estimate from the billed counters at rates{" "}
+            ${summary.rateCard.cpuPerHour}/CPU-hr, ${summary.rateCard.memoryGbPerHour}/GB-hr.
+            Not an official invoice — reconcile once against a real bill to prove
+            accuracy and calibrate the storage definition.
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function MeterStat({
+  label,
+  usage,
+  cost,
+  exact = false,
+}: {
+  label: string;
+  usage: string;
+  cost: string;
+  exact?: boolean;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex items-center justify-between">
+        <p className="text-[0.68rem] font-bold uppercase tracking-[0.08em] text-slate-500">
+          {label}
+        </p>
+        {exact ? (
+          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[0.6rem] font-bold uppercase tracking-wide text-emerald-800">
+            exact
+          </span>
+        ) : null}
+      </div>
+      <p className="mt-2 text-lg font-black text-slate-950">{cost}</p>
+      <p className="mt-0.5 text-xs text-slate-500">{usage}</p>
     </div>
   );
 }
