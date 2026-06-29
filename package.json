@@ -11,7 +11,8 @@
     "start": "next start -p ${PORT:-8080}",
     "lint": "eslint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "checkpoint": "node ./scripts/workbench.mjs checkpoint"
   },
   "dependencies": {
     "next": "16.2.7",

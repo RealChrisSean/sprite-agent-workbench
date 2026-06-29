@@ -163,16 +163,30 @@ Instead of a bare `sprite checkpoint create` (which lands on the dashboard as a
 context-less "mystery hash"), use the `workbench` CLI. It takes the same
 Sprites snapshot and auto-writes the description — changed files, intent, and
 an optional verification result — so every restore point is a confident
-decision, not a gamble:
+decision, not a gamble.
+
+Install the command once from your clone, then use it anywhere:
 
 ```bash
-npx workbench checkpoint "before auth refactor"
-npx workbench checkpoint "deps bump" --verify "npm test"
+npm link                              # or: npm install -g .
+workbench checkpoint "before auth refactor"
+workbench checkpoint "deps bump" --verify "npm test"
+```
+
+Or run it without installing, from the repo root:
+
+```bash
+npm run checkpoint -- "before auth refactor"
+# or: node scripts/workbench.mjs checkpoint "before auth refactor"
 ```
 
 The Sprite is resolved from the local `.sprite` file (override with
 `--sprite`). Checkpoints made any other way still show up — the Workbench
 observes them passively — but only this command records the rich context.
+
+> Do not use `npx workbench` — an unrelated `workbench` package exists on npm,
+> and npx may download and run it. Use the linked `workbench` binary or the
+> `npm run checkpoint` / `node scripts/...` forms above.
 
 ## Let Your Agent Write The Timeline
 

@@ -81,11 +81,14 @@ npm test
 
 ## Checkpointing
 
-- To create a checkpoint, run `npx workbench checkpoint "<what changed>"`
-  instead of bare `sprite checkpoint create`. The wrapper takes the same
-  Sprites snapshot and also auto-records the dashboard context (changed files,
-  intent, and verification), so the checkpoint is not a contextless "mystery
-  hash". Add `--verify "<command>"` to record a pass/fail check.
+- To create a checkpoint, run `node scripts/workbench.mjs checkpoint
+  "<what changed>"` (or `workbench checkpoint "..."` after a one-time
+  `npm link`) instead of bare `sprite checkpoint create`. The wrapper takes
+  the same Sprites snapshot and also auto-records the dashboard context
+  (changed files, intent, and verification), so the checkpoint is not a
+  contextless "mystery hash". Add `--verify "<command>"` to record a pass/fail
+  check. Do not use `npx workbench` — an unrelated `workbench` package exists
+  on npm.
 - The Sprite name is resolved automatically from the local `.sprite` file;
   pass `--sprite <name>` to override.
 - The same secret-snapshot caution applies: a checkpoint captures the entire

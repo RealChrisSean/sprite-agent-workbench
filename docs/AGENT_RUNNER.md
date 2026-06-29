@@ -8,17 +8,19 @@ seed events.
 
 ## Checkpointing (the one command to remember)
 
-To create a checkpoint, run:
+To create a checkpoint, run (from the repo root):
 
 ```bash
-npx workbench checkpoint "<what you just did>"        # add --verify "npm test"
+node scripts/workbench.mjs checkpoint "<what you just did>"   # add --verify "npm test"
 ```
 
-This takes the Sprites snapshot **and** auto-writes the dashboard context
-(changed files via `git diff`, the intent, and a verification result), all
-linked to the new checkpoint. Do not use bare `sprite checkpoint create` — it
-produces a context-less checkpoint. The Sprite is resolved from the local
-`.sprite` file (override with `--sprite`).
+After a one-time `npm link` you can use `workbench checkpoint "..."` from
+anywhere. This takes the Sprites snapshot **and** auto-writes the dashboard
+context (changed files via `git diff`, the intent, and a verification result),
+all linked to the new checkpoint. Do not use bare `sprite checkpoint create`
+(context-less), and do not use `npx workbench` (an unrelated `workbench`
+package exists on npm). The Sprite is resolved from the local `.sprite` file
+(override with `--sprite`).
 
 ### Optional: fire it automatically with a Claude Code hook
 
@@ -31,7 +33,7 @@ If you'd rather not remember the command, add a Stop hook in
     "Stop": [
       {
         "hooks": [
-          { "type": "command", "command": "npx workbench checkpoint \"end of turn\"" }
+          { "type": "command", "command": "node scripts/workbench.mjs checkpoint \"end of turn\"" }
         ]
       }
     ]
