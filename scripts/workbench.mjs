@@ -2,7 +2,7 @@
 // The Workbench CLI. The headline command is `checkpoint`: it takes a Sprites
 // snapshot AND auto-writes the dashboard description (files, intent,
 // verification), so a normal `sprite checkpoint create` workflow stops
-// producing context-less "mystery hash" checkpoints.
+// producing contextless checkpoint IDs.
 //
 // Environment:
 //   WORKBENCH_URL  Workbench base URL (default: http://localhost:3001)
@@ -15,8 +15,8 @@
 //   start | files | verify | complete | fail | event   (see record-run-event)
 //
 // Examples:
-//   npx workbench checkpoint "before auth refactor"
-//   npx workbench checkpoint "deps bump" --verify "npm test"
+//   node scripts/workbench.mjs checkpoint "before auth refactor"
+//   workbench checkpoint "deps bump" --verify "npm test"   # after npm link
 
 import { execFileSync } from "node:child_process";
 import {
@@ -64,9 +64,9 @@ async function runCheckpoint(args) {
   }
 
   console.warn(
-    "Note: a checkpoint snapshots the entire Sprite filesystem, including any " +
-      "secret-bearing files (e.g. .env.local). Avoid checkpointing right after " +
-      "writing secrets unless you mean to preserve them."
+    "Note: a checkpoint snapshots the Sprite's writable filesystem overlay, " +
+      "including any secret-bearing files on disk (e.g. .env.local). Avoid " +
+      "checkpointing right after writing secrets unless you mean to preserve them."
   );
 
   // Resolve intent first so the snapshot itself carries the comment too.

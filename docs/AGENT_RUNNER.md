@@ -18,8 +18,8 @@ After a one-time `npm link` you can use `workbench checkpoint "..."` from
 anywhere. This takes the Sprites snapshot **and** auto-writes the dashboard
 context (changed files via `git diff`, the intent, and a verification result),
 all linked to the new checkpoint. Do not use bare `sprite checkpoint create`
-(context-less), and do not use `npx workbench` (an unrelated `workbench`
-package exists on npm). The Sprite is resolved from the local `.sprite` file
+(contextless checkpoint ID), and do not use `npx workbench` (an unrelated
+`workbench` package exists on npm). The Sprite is resolved from the local `.sprite` file
 (override with `--sprite`).
 
 ### Optional: fire it automatically with a Claude Code hook

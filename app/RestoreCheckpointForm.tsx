@@ -121,8 +121,8 @@ export function RestoreCheckpointForm({
               Create a safety checkpoint first (recommended).
             </span>{" "}
             Snapshots the current state so this restore can be undone. The
-            snapshot captures the Sprite&apos;s entire filesystem, including
-            any secret-bearing files currently on it (for example
+            snapshot captures the Sprite&apos;s writable filesystem overlay,
+            including any secret-bearing files on disk (for example
             `.env.local`).
           </span>
         </label>

@@ -27,7 +27,7 @@ The terminal is still useful. This is for the moments where seeing the state is 
 
 The fleet view shows every Sprite visible to the configured account, grouped by running, warm, cold, and unknown state. It also shows why the app thinks a Sprite is warm or cold, which URL auth mode it uses, and when it was last running or warming.
 
-The selected Sprite view focuses on checkpoints. It shows the checkpoint timeline, timestamps, context, and the state you would use for a future `revert to this` action.
+The selected Sprite view focuses on checkpoints. It shows the checkpoint timeline, timestamps, context, and a confirmation-gated restore action for the checkpoint you decide to trust.
 
 ## Keep The Token Out Of The Browser
 
@@ -115,7 +115,7 @@ SPRITE_AGENT_WORKBENCH_SECRET_PATH=/home/sprite/.sprite-agent-workbench/secrets.
 
 The thing to remember is checkpoints.
 
-Sprites can checkpoint their filesystem. If you save a token to disk and then checkpoint the Sprite, that secret-bearing file may become part of the snapshot. That is the tradeoff. It is also why the connector path exists.
+Sprites checkpoint the writable filesystem overlay. If you save a token to disk and then checkpoint the Sprite, that secret-bearing file may become part of the snapshot. That is the tradeoff. It is also why the connector path exists.
 
 Use fallback storage when you understand that cost.
 
@@ -160,10 +160,10 @@ If you override the port, make sure the Sprite URL proxy can reach it. Running t
 ## Checkpoint With Context
 
 Instead of a bare `sprite checkpoint create` (which lands on the dashboard as a
-context-less "mystery hash"), use the `workbench` CLI. It takes the same
-Sprites snapshot and auto-writes the description — changed files, intent, and
-an optional verification result — so every restore point is a confident
-decision, not a gamble.
+contextless checkpoint ID), use the `workbench` CLI. It takes the same
+Sprites writable-overlay snapshot and auto-writes the description: changed
+files, intent, and an optional verification result. Every restore point should
+be a confident decision, not a gamble.
 
 Install the command once from your clone, then use it anywhere:
 
@@ -181,8 +181,8 @@ npm run checkpoint -- "before auth refactor"
 ```
 
 The Sprite is resolved from the local `.sprite` file (override with
-`--sprite`). Checkpoints made any other way still show up — the Workbench
-observes them passively — but only this command records the rich context.
+`--sprite`). Checkpoints made any other way still show up because the Workbench
+observes them passively, but only this command records the rich context.
 
 > Do not use `npx workbench` — an unrelated `workbench` package exists on npm,
 > and npx may download and run it. Use the linked `workbench` binary or the
@@ -214,13 +214,15 @@ npm run build
 
 ## Next
 
-The next useful thing is actions.
+The next useful thing is richer restore context.
 
-Right now this is mostly inspection. This weekend I want to add safe checkpoint actions, starting with `revert to this`.
+Restore exists, but it should keep getting harder to use casually. The current
+flow requires the Sprite name, an overwrite acknowledgement, and defaults to a
+safety checkpoint before restore.
 
 After that:
 
-- per-Sprite detail pages
 - status history, so I can see when a Sprite went cold
-- agent run tracking with commands, diffs, logs, tests, and summaries
+- checkpoint comparisons using the mounted checkpoint directories
+- more complete run tracking with commands, diffs, logs, tests, and summaries
 - an optional Codex skill once the product shape settles

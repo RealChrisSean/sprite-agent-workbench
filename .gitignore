@@ -24,10 +24,15 @@
 .DS_Store
 *.pem
 .sprite
+.claude/
 .workbench-state/
 docs/DEVLOG.md
 docs/PLAN.md
 docs/TODO.md
+
+# local reference docs
+fly.md
+doc_56c83d803d35_doc_caef58a64aca_fly.md
 
 # debug
 npm-debug.log*

@@ -608,7 +608,7 @@ export async function getDashboardData(
     // Passive checkpoint detection: any checkpoint we loaded that has no
     // linked timeline event gets an "observed" checkpoint_created, so
     // checkpoints made outside the Workbench (raw `sprite checkpoint create`,
-    // the Sprites web UI) are never contextless mystery hashes. Best-effort —
+    // the Sprites web UI) are never contextless checkpoint IDs. Best-effort —
     // never let a ledger write break the dashboard.
     if (loadCheckpoints && selectedCheckpointSpriteName) {
       const selected = sprites.find(

@@ -86,13 +86,14 @@ npm test
   `npm link`) instead of bare `sprite checkpoint create`. The wrapper takes
   the same Sprites snapshot and also auto-records the dashboard context
   (changed files, intent, and verification), so the checkpoint is not a
-  contextless "mystery hash". Add `--verify "<command>"` to record a pass/fail
+  contextless checkpoint ID. Add `--verify "<command>"` to record a pass/fail
   check. Do not use `npx workbench` — an unrelated `workbench` package exists
   on npm.
 - The Sprite name is resolved automatically from the local `.sprite` file;
   pass `--sprite <name>` to override.
-- The same secret-snapshot caution applies: a checkpoint captures the entire
-  filesystem, so avoid checkpointing right after writing secret-bearing files.
+- The same secret-snapshot caution applies: a checkpoint captures the Sprite's
+  writable filesystem overlay, so avoid checkpointing right after writing
+  secret-bearing files.
 - Checkpoints made any other way (raw CLI, the Sprites web UI) still appear on
   the dashboard — Workbench observes them passively — but only the wrapper
   records the rich files/verification context.

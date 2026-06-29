@@ -48,9 +48,9 @@ export async function POST(request: Request) {
       );
     }
 
-    // The safety checkpoint snapshots the Sprite's entire filesystem,
-    // including any secret-bearing files on it. The UI states this next to
-    // the opt-out, so a true here is informed consent per restore.
+    // The safety checkpoint snapshots the Sprite's writable filesystem
+    // overlay, including any secret-bearing files on disk. The UI states this
+    // next to the opt-out, so a true here is informed consent per restore.
     let safetyCheckpointId: string | null = null;
     if (body.createSafetyCheckpoint === true) {
       const safetyComment = `Safety checkpoint before restore to ${checkpointId}`;
