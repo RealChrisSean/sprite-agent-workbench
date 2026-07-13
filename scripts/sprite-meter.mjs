@@ -1,20 +1,21 @@
 #!/usr/bin/env node
-// The on-Sprite meter reader. Runs INSIDE a Sprite and samples the same
-// counters the platform bills from, then POSTs them to the Workbench. This is
-// the "accurate tier": CPU is read from the cumulative cgroup counter so it is
-// exact regardless of interval; memory/storage are sampled for integration.
+// The on-Sprite meter reader. It produces a counter-based local estimate, not
+// invoice data. CPU/memory use cgroup values; optional `du` storage values are
+// only directory-size proxies for scenario modeling.
 //
 // Environment:
-//   WORKBENCH_URL      Workbench base URL (default: http://localhost:3001)
+//   WORKBENCH_URL      Workbench base URL (default: http://localhost:1340)
+//   WORKBENCH_INGEST_TOKEN  Required app-level ingest secret
+//   WORKBENCH_EDGE_TOKEN   Optional Sprite URL bearer token
 //   SPRITE_NAME        Sprite these samples belong to (else read from ./.sprite)
 //   METER_INTERVAL_MS  Sample interval (default: 60000)
 //   METER_SOURCE       "cgroup" (default) or "synthetic" for local demo/testing
-//   METER_HOT_DIR      Dir measured as hot storage (default: /home/sprite/app)
-//   METER_COLD_DIR     Dir measured as cold storage (optional)
+//   METER_HOT_DIR      Optional directory-size proxy
+//   METER_COLD_DIR     Optional directory-size proxy
 //
 // Usage:
-//   node scripts/sprite-meter.mjs                 # real cgroup reader
-//   METER_SOURCE=synthetic node scripts/sprite-meter.mjs --once   # demo
+//   node scripts/sprite-meter.mjs                 # one real sample
+//   node scripts/sprite-meter.mjs --continuous    # opt-in sampling loop
 //
 // On SIGINT/SIGTERM it takes one final sample (captures the tail CPU) and exits.
 
@@ -51,14 +52,20 @@ function buildSampler({ source, spriteName, hotDir, coldDir }) {
     spriteName,
     hotStorageBytes: () => duBytes(hotDir),
     coldStorageBytes: () => duBytes(coldDir),
+    storageMeasurement: hotDir || coldDir ? "directory-du" : "none",
   });
 }
 
 async function main() {
-  const once = process.argv.includes("--once");
+  const continuous = process.argv.includes("--continuous");
   const workbenchUrl =
-    process.env.WORKBENCH_URL || "http://localhost:3001";
+    process.env.WORKBENCH_URL || "http://localhost:1340";
   const spriteName = resolveSpriteName();
+  const ingestToken = process.env.WORKBENCH_INGEST_TOKEN?.trim();
+  if (!ingestToken) {
+    console.error("Error: WORKBENCH_INGEST_TOKEN is required.");
+    process.exit(2);
+  }
   if (!spriteName) {
     console.error(
       "Error: could not resolve a Sprite. Set SPRITE_NAME or add a .sprite file."
@@ -71,7 +78,7 @@ async function main() {
   const sampler = buildSampler({
     source,
     spriteName,
-    hotDir: process.env.METER_HOT_DIR || "/home/sprite/app",
+    hotDir: process.env.METER_HOT_DIR || "",
     coldDir: process.env.METER_COLD_DIR || "",
   });
 
@@ -79,7 +86,12 @@ async function main() {
   const tick = async (label = "sample") => {
     try {
       const sample = await sampler();
-      await postSample({ workbenchUrl, sample });
+      await postSample({
+        workbenchUrl,
+        sample,
+        ingestToken,
+        edgeToken: process.env.WORKBENCH_EDGE_TOKEN?.trim(),
+      });
       console.log(
         `[${sample.observedAt}] ${label}: cpu=${(sample.cpuUsageUsec / 1e6).toFixed(1)}s ` +
           `mem=${(sample.memCurrentBytes / 1024 ** 3).toFixed(2)}GiB ` +
@@ -91,10 +103,13 @@ async function main() {
   };
 
   await tick("initial");
-  if (once) return;
+  if (!continuous) return;
 
   console.log(
     `Metering ${spriteName} every ${intervalMs}ms via ${source} → ${workbenchUrl}`
+  );
+  console.warn(
+    "Continuous metering is itself ongoing activity and can prevent this Sprite from becoming idle."
   );
   const timer = setInterval(tick, intervalMs);
 

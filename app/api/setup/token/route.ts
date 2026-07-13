@@ -4,8 +4,9 @@ import {
   validateTokenInput,
 } from "../../../../lib/sprite-auth";
 import {
+  assertAdminRequest,
   assertJsonRequest,
-  assertSameOriginRequest,
+  getRequestErrorStatus,
 } from "../../../../lib/request-security";
 import { validateSpritesApiToken } from "../../../../lib/sprites";
 
@@ -14,7 +15,7 @@ export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   try {
-    assertSameOriginRequest(request);
+    assertAdminRequest(request);
     assertJsonRequest(request);
 
     const body = (await request.json()) as { token?: unknown };
@@ -33,14 +34,14 @@ export async function POST(request: Request) {
         ok: false,
         message: err instanceof Error ? err.message : "Could not save token.",
       },
-      { status: 400 }
+      { status: getRequestErrorStatus(err) }
     );
   }
 }
 
 export async function DELETE(request: Request) {
   try {
-    assertSameOriginRequest(request);
+    assertAdminRequest(request);
     deleteSavedSpriteApiToken();
 
     return Response.json({
@@ -53,7 +54,7 @@ export async function DELETE(request: Request) {
         ok: false,
         message: err instanceof Error ? err.message : "Could not delete token.",
       },
-      { status: 400 }
+      { status: getRequestErrorStatus(err) }
     );
   }
 }

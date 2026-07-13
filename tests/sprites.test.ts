@@ -14,6 +14,10 @@ import {
 } from "../app/api/setup/token/route";
 import { POST as testConnectionRoute } from "../app/api/setup/test-connection/route";
 import {
+  ADMIN_SESSION_COOKIE,
+  createAdminSessionValue,
+} from "../lib/admin-auth";
+import {
   createSpriteCheckpoint,
   createSpriteApiUrl,
   createSpriteGatewayUrl,
@@ -22,6 +26,9 @@ import {
   getSpriteDashboardUrl,
   getSpriteDataSource,
   getSpriteStatusGroups,
+  observeSpriteFleet,
+  parseSpriteExecSessions,
+  parseSpriteServices,
   parseCheckpointCreateEvents,
   parseSpriteApiJson,
   restoreSpriteCheckpoint,
@@ -38,6 +45,18 @@ import {
 } from "../lib/sprite-auth";
 
 const tempDirs: string[] = [];
+
+function adminHeaders(): Record<string, string> {
+  vi.stubEnv("WORKBENCH_ADMIN_TOKEN", "admin-test-token");
+  return {
+    origin: "http://localhost",
+    cookie: `${ADMIN_SESSION_COOKIE}=${createAdminSessionValue()}`,
+  };
+}
+
+function adminJsonHeaders(): Record<string, string> {
+  return { ...adminHeaders(), "content-type": "application/json" };
+}
 
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
@@ -164,6 +183,41 @@ describe("Sprite API helpers", () => {
       { type: "info", data: "Creating checkpoint..." },
       { type: "complete", data: "Checkpoint v8 created" },
     ]);
+  });
+
+  it("normalizes Services and exec sessions without treating inactive sessions as active", () => {
+    const services = parseSpriteServices([
+      {
+        name: "hermes-keepalive",
+        cmd: "/usr/bin/bash",
+        args: ["/home/sprite/keepalive.sh"],
+        http_port: null,
+        state: {
+          status: "running",
+          pid: 42,
+          started_at: "2026-07-09T17:49:14Z",
+        },
+      },
+    ]);
+    const sessions = parseSpriteExecSessions({
+      count: 1,
+      sessions: [
+        {
+          id: "session-1",
+          command: "/usr/bin/claude",
+          is_active: false,
+          created: "2026-07-07T02:13:00Z",
+          last_activity: "2026-07-08T21:56:07Z",
+        },
+      ],
+    });
+
+    expect(services[0]).toMatchObject({
+      state: "running",
+      keepaliveNamed: true,
+      pid: 42,
+    });
+    expect(sessions[0]).toMatchObject({ active: false, id: "session-1" });
   });
 
   it("creates a checkpoint with a server-side token and parses completion", async () => {
@@ -344,7 +398,8 @@ describe("getDashboardData", () => {
     expect(data.sprites[0].health.label).toBe("Auth gated");
     expect(data.sprites[0].checkpoints).toHaveLength(1);
     expect(data.costExposure?.activeNow).toBe(0);
-    expect(data.costExposure?.observationCount).toBe(1);
+    expect(data.costExposure?.observationCount).toBe(0);
+    expect(data.costExposure?.activeTimeStatus).toBe("insufficient");
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[0][1]).toMatchObject({
       headers: {
@@ -352,6 +407,41 @@ describe("getDashboardData", () => {
         authorization: "Bearer token-123",
       },
     });
+  });
+
+  it("does not request a public Sprite URL while rendering dashboard data", async () => {
+    useObservationFile();
+    vi.stubEnv("SPRITES_API_TOKEN", "token-123");
+    vi.stubEnv("SPRITES_API_BASE_URL", "https://api.test");
+    const publicSprite = {
+      ...makeSpriteSummary("hermesagent", "running"),
+      url: "https://hermes.example.test",
+      url_settings: { auth: "public" },
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url !== "https://api.test/v1/sprites/") {
+        throw new Error(`Unexpected fetch: ${url}`);
+      }
+      return jsonResponse({
+        name: "chris-sean-dabatos",
+        running: 1,
+        warm: 0,
+        cold: 0,
+        running_limit: 10,
+        warm_limit: 10,
+        next_continuation_token: null,
+        has_more: false,
+        sprites: [publicSprite],
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const data = await getDashboardData(null, { loadCheckpoints: false });
+
+    expect(data.ok).toBe(true);
+    expect(data.sprites[0].health.label).toBe("Not probed");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("uses connector mode without sending an Authorization header", async () => {
@@ -468,6 +558,78 @@ describe("getDashboardData", () => {
     ]);
   });
 
+  it("records external checkpoint provenance only during explicit collection", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "sprite-workbench-collector-test-"));
+    tempDirs.push(dir);
+    vi.stubEnv("SPRITES_API_TOKEN", "token-123");
+    vi.stubEnv("SPRITES_API_BASE_URL", "https://api.test");
+    vi.stubEnv(
+      "SPRITE_AGENT_WORKBENCH_OBSERVATIONS_PATH",
+      join(dir, "observations.jsonl")
+    );
+    vi.stubEnv(
+      "SPRITE_AGENT_WORKBENCH_RUN_EVENTS_PATH",
+      join(dir, "run-events.jsonl")
+    );
+    vi.stubEnv(
+      "SPRITE_AGENT_WORKBENCH_HEALTH_PROBES_PATH",
+      join(dir, "health.jsonl")
+    );
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "https://api.test/v1/sprites/") {
+        return jsonResponse({
+          name: "chris-sean-dabatos",
+          running: 0,
+          warm: 1,
+          cold: 0,
+          running_limit: 10,
+          warm_limit: 10,
+          next_continuation_token: null,
+          has_more: false,
+          sprites: [makeSpriteSummary("hermesagent", "warm")],
+        });
+      }
+      if (url === "https://api.test/v1/sprites/hermesagent/checkpoints") {
+        return jsonResponse([
+          {
+            id: "Current",
+            create_time: "2026-07-13T12:00:00Z",
+          },
+          {
+            id: "v10",
+            create_time: "2026-06-22T08:00:00Z",
+            comment: "before webhook migration",
+          },
+        ]);
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getDashboardData("hermesagent");
+    expect(await readAgentRunEventsForSprite("hermesagent")).toEqual([]);
+
+    const result = await observeSpriteFleet(
+      new Date("2026-07-13T12:05:00Z")
+    );
+    const events = await readAgentRunEventsForSprite("hermesagent");
+
+    expect(result.checkpointEventsRecorded).toBe(1);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: "checkpoint_observed",
+      label: "Checkpoint v10 discovered",
+      createdAt: "2026-07-13T12:05:00.000Z",
+      metadata: {
+        checkpoint_id: "v10",
+        checkpoint_created_at: "2026-06-22T08:00:00Z",
+        observed_at: "2026-07-13T12:05:00.000Z",
+        source: "observed",
+      },
+    });
+  });
+
   it("returns a hosted-token setup error when the token is invalid", async () => {
     vi.stubEnv("SPRITES_API_TOKEN", "bad-token");
     vi.stubEnv("SPRITES_API_BASE_URL", "https://api.test");
@@ -561,10 +723,7 @@ describe("setup token route", () => {
     const saveResponse = await saveFallbackToken(
       new Request("http://localhost/api/setup/token", {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          origin: "http://localhost",
-        },
+        headers: adminJsonHeaders(),
         body: JSON.stringify({ token: "token-route-test" }),
       })
     );
@@ -575,9 +734,7 @@ describe("setup token route", () => {
     const deleteResponse = await deleteFallbackToken(
       new Request("http://localhost/api/setup/token", {
         method: "DELETE",
-        headers: {
-          origin: "http://localhost",
-        },
+        headers: adminHeaders(),
       })
     );
 
@@ -604,7 +761,7 @@ describe("setup token route", () => {
       })
     );
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(403);
     expect(readSavedSpriteApiToken()).toBeNull();
 
     rmSync(dir, { recursive: true, force: true });
@@ -639,14 +796,10 @@ describe("checkpoint creation route", () => {
     const response = await createCheckpointRoute(
       new Request("http://localhost/api/sprites/checkpoints", {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          origin: "http://localhost",
-        },
+        headers: adminJsonHeaders(),
         body: JSON.stringify({
           spriteName: "sprite-agent-workbench",
           comment: "clean start",
-          appHealth: "200 OK",
         }),
       })
     );
@@ -677,7 +830,6 @@ describe("checkpoint creation route", () => {
         checkpoint_id: "v9",
         source: "workbench",
         has_comment: true,
-        app_health: "200 OK",
       },
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -703,7 +855,7 @@ describe("checkpoint creation route", () => {
     );
     const body = (await response.json()) as { ok?: boolean; message?: string };
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(403);
     expect(body.ok).toBe(false);
     expect(body.message).toContain("Origin");
     expect(fetch).not.toHaveBeenCalled();
@@ -738,10 +890,7 @@ describe("checkpoint restore route", () => {
     const response = await restoreCheckpointRoute(
       new Request("http://localhost/api/sprites/restore", {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          origin: "http://localhost",
-        },
+        headers: adminJsonHeaders(),
         body: JSON.stringify({
           spriteName: "sprite-agent-workbench",
           checkpointId: "v9",
@@ -817,10 +966,7 @@ describe("checkpoint restore route", () => {
     const response = await restoreCheckpointRoute(
       new Request("http://localhost/api/sprites/restore", {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          origin: "http://localhost",
-        },
+        headers: adminJsonHeaders(),
         body: JSON.stringify({
           spriteName: "sprite-agent-workbench",
           checkpointId: "v9",
@@ -869,10 +1015,7 @@ describe("checkpoint restore route", () => {
     const response = await restoreCheckpointRoute(
       new Request("http://localhost/api/sprites/restore", {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          origin: "http://localhost",
-        },
+        headers: adminJsonHeaders(),
         body: JSON.stringify({
           spriteName: "sprite-agent-workbench",
           checkpointId: "v9",
@@ -896,10 +1039,7 @@ describe("checkpoint restore route", () => {
     const response = await restoreCheckpointRoute(
       new Request("http://localhost/api/sprites/restore", {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          origin: "http://localhost",
-        },
+        headers: adminJsonHeaders(),
         body: JSON.stringify({
           spriteName: "sprite-agent-workbench",
           checkpointId: "v9",
@@ -923,10 +1063,7 @@ describe("checkpoint restore route", () => {
     const response = await restoreCheckpointRoute(
       new Request("http://localhost/api/sprites/restore", {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          origin: "http://localhost",
-        },
+        headers: adminJsonHeaders(),
         body: JSON.stringify({
           spriteName: "sprite-agent-workbench",
           checkpointId: "v9",
@@ -963,7 +1100,7 @@ describe("checkpoint restore route", () => {
     );
     const body = (await response.json()) as { ok?: boolean; message?: string };
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(403);
     expect(body.ok).toBe(false);
     expect(body.message).toContain("Origin");
     expect(fetch).not.toHaveBeenCalled();

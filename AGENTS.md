@@ -94,9 +94,10 @@ npm test
 - The same secret-snapshot caution applies: a checkpoint captures the Sprite's
   writable filesystem overlay, so avoid checkpointing right after writing
   secret-bearing files.
-- Checkpoints made any other way (raw CLI, the Sprites web UI) still appear on
-  the dashboard — Workbench observes them passively — but only the wrapper
-  records the rich files/verification context.
+- Checkpoints made any other way (raw CLI, the Sprites web UI) still appear in
+  the checkpoint list. The explicit Workbench collector records their later
+  discovery, but only the wrapper records rich files/verification context at
+  creation time.
 
 ## Sprite Safety Rules
 

@@ -1,10 +1,11 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildCostExposureSummary,
   observeCostExposure,
+  readCostExposure,
   readSpriteObservations,
   type SpriteObservation,
 } from "../lib/cost-ledger";
@@ -55,6 +56,20 @@ describe("passive cost exposure ledger", () => {
     );
   });
 
+  it("reads current state without creating an observation ledger", async () => {
+    const path = useObservationFile();
+    const summary = await readCostExposure({
+      source: "token",
+      observedAt: new Date("2026-06-06T12:00:00Z"),
+      sprites: [makeObservableSprite("workbench", "running", "public")],
+    });
+
+    expect(summary.activeNow).toBe(1);
+    expect(summary.observationCount).toBe(0);
+    expect(summary.activeTimeStatus).toBe("insufficient");
+    expect(existsSync(path)).toBe(false);
+  });
+
   it("computes observed active time conservatively from refresh history", () => {
     const observations: SpriteObservation[] = [
       makeObservation("workbench", "warm", "2026-06-06T12:00:00Z"),
@@ -85,13 +100,15 @@ describe("passive cost exposure ledger", () => {
   });
 });
 
-function useObservationFile() {
+function useObservationFile(): string {
   const dir = mkdtempSync(join(tmpdir(), "sprite-workbench-cost-test-"));
   tempDirs.push(dir);
+  const path = join(dir, "observations.jsonl");
   vi.stubEnv(
     "SPRITE_AGENT_WORKBENCH_OBSERVATIONS_PATH",
-    join(dir, "observations.jsonl")
+    path
   );
+  return path;
 }
 
 function makeObservableSprite(

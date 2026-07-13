@@ -1,6 +1,7 @@
 import {
+  assertAdminRequest,
   assertJsonRequest,
-  assertSameOriginRequest,
+  getRequestErrorStatus,
 } from "../../../../lib/request-security";
 import {
   buildCheckpointCreatedEventInput,
@@ -17,20 +18,15 @@ export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   try {
-    assertSameOriginRequest(request);
+    assertAdminRequest(request);
     assertJsonRequest(request);
 
     const body = (await request.json()) as {
       spriteName?: unknown;
       comment?: unknown;
-      appHealth?: unknown;
     };
     const spriteName = validateSpriteNameInput(body.spriteName);
     const comment = validateCheckpointCommentInput(body.comment);
-    const appHealth =
-      typeof body.appHealth === "string"
-        ? body.appHealth.slice(0, 80)
-        : null;
     const result = await createSpriteCheckpoint(spriteName, comment);
 
     let runEventId: string | null = null;
@@ -42,7 +38,6 @@ export async function POST(request: Request) {
           checkpointId: result.checkpointId,
           comment,
           message: result.message,
-          appHealth,
         })
       );
       runEventId = runEvent.id;
@@ -66,7 +61,7 @@ export async function POST(request: Request) {
         message:
           err instanceof Error ? err.message : "Could not create checkpoint.",
       },
-      { status: 400 }
+      { status: getRequestErrorStatus(err) }
     );
   }
 }

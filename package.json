@@ -12,7 +12,10 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "checkpoint": "node ./scripts/workbench.mjs checkpoint"
+    "checkpoint": "node ./scripts/workbench.mjs checkpoint",
+    "observe": "node ./scripts/observe.mjs",
+    "secrets:provision": "node ./scripts/provision-workbench-secrets.mjs",
+    "deploy:sprite": "node ./scripts/deploy-sprite.mjs"
   },
   "dependencies": {
     "next": "16.2.7",

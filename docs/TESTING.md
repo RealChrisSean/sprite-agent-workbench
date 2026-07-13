@@ -30,8 +30,11 @@ Examples:
 - Data-source behavior: token mode vs local CLI fallback.
 - Error messages: invalid token, missing CLI auth, failed checkpoint fetch.
 - Sprite state inference: running, warm, cold, unknown.
-- URL/auth handling: auth-gated URLs should not run public health checks.
+- URL/auth handling: dashboard renders must not request public or auth-gated
+  Sprite URLs; explicit probes must preserve configured status expectations.
 - Future checkpoint actions: restore must require explicit confirmation.
+- Write security: browser writes require an admin session and machine writes
+  require the dedicated ingest header.
 
 ## Current Test Coverage
 
@@ -42,8 +45,13 @@ The current unit tests cover:
 - Falling back to CLI mode when no token is set.
 - Building predictable Sprites API URLs.
 - Formatting API auth errors.
-- Fetching dashboard data through hosted token mode.
+- Fetching dashboard data through hosted token mode without waking app URLs.
 - Returning a clear setup error when the hosted token is invalid.
+- Expiring admin sessions and ingest-token validation.
+- Explicit health path/status validation, including intentional `404`.
+- Services and exec-session response normalization.
+- Decimal-GB metering, CPU/memory billing floors, reset handling, and coverage.
+- Read-only cost rendering that does not create ledger files.
 
 ## CI
 

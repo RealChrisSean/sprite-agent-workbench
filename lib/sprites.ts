@@ -10,14 +10,23 @@ import {
 import {
   buildCostExposureSummary,
   observeCostExposure,
+  readCostExposure,
   type CostExposureSummary,
 } from "./cost-ledger";
 import {
-  buildCheckpointCreatedEventInput,
+  buildCheckpointObservedEventInput,
   getLinkedCheckpointIds,
   readAgentRunEventsForSprite,
   recordAgentRunEvent,
 } from "./agent-runs";
+import {
+  getHealthWithoutProbe,
+  probePublicSpriteHealth,
+  readLatestHealthProbes,
+  recordHealthProbe,
+  type HealthCheckResult,
+  type HealthProbeRecord,
+} from "./health-probes";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_SPRITES_API_BASE_URL = "https://api.sprites.dev";
@@ -123,17 +132,45 @@ export interface SleepInference {
   evidence: string[];
 }
 
-export interface HealthCheckResult {
-  status: "ok" | "blocked" | "failed" | "skipped";
-  label: string;
-  detail: string;
-}
-
 export interface SpriteStatusGroup<T extends Pick<SpriteSummary, "status">> {
   key: "running" | "warm" | "cold" | "other";
   label: string;
   detail: string;
   sprites: T[];
+}
+
+export interface SpriteRuntimeService {
+  name: string;
+  command: string;
+  state: string;
+  pid: number | null;
+  httpPort: number | null;
+  startedAt: string | null;
+  keepaliveNamed: boolean;
+}
+
+export interface SpriteExecSession {
+  id: string;
+  command: string;
+  active: boolean;
+  createdAt: string | null;
+  lastActivityAt: string | null;
+  workdir: string | null;
+}
+
+export interface SpriteRuntimeEvidence {
+  spriteName: string;
+  services: SpriteRuntimeService[];
+  sessions: SpriteExecSession[];
+  activeSessionCount: number;
+  runningServiceCount: number;
+  assessment: {
+    label: string;
+    tone: "good" | "warn" | "neutral";
+    detail: string;
+  };
+  errors: string[];
+  fetchedAt: string;
 }
 
 async function runSpriteApi<T>(path: string): Promise<T> {
@@ -569,6 +606,9 @@ export async function getDashboardData(
   const loadCheckpoints = options?.loadCheckpoints ?? true;
   try {
     const list = await runSpriteApi<SpriteListResponse>("/v1/sprites/");
+    const latestHealthProbes = await readLatestHealthProbes().catch(
+      () => new Map<string, HealthProbeRecord>()
+    );
     const selectedCheckpointSpriteName = loadCheckpoints
       ? (list.sprites.find((sprite) => sprite.name === checkpointSpriteName)
           ?.name ??
@@ -584,10 +624,11 @@ export async function getDashboardData(
           sprite.name === selectedCheckpointSpriteName
             ? getCheckpoints(sprite.name)
             : Promise.resolve({ items: [] });
-        const [checkpoints, health] = await Promise.all([
-          checkpointRequest,
-          checkSpriteHealth(sprite),
-        ]);
+        const checkpoints = await checkpointRequest;
+        const health = resolveStoredHealth(
+          sprite,
+          latestHealthProbes.get(sprite.name)
+        );
 
         return {
           ...sprite,
@@ -599,25 +640,11 @@ export async function getDashboardData(
         };
       })
     );
-    const costExposure = await observeCostExposure({
+    const costExposure = await readCostExposure({
       sprites,
       source,
       observedAt: fetchedAtDate,
     });
-
-    // Passive checkpoint detection: any checkpoint we loaded that has no
-    // linked timeline event gets an "observed" checkpoint_created, so
-    // checkpoints made outside the Workbench (raw `sprite checkpoint create`,
-    // the Sprites web UI) are never contextless checkpoint IDs. Best-effort —
-    // never let a ledger write break the dashboard.
-    if (loadCheckpoints && selectedCheckpointSpriteName) {
-      const selected = sprites.find(
-        (sprite) => sprite.name === selectedCheckpointSpriteName
-      );
-      if (selected) {
-        await recordObservedCheckpoints(selected).catch(() => {});
-      }
-    }
 
     return {
       ok: true,
@@ -666,12 +693,287 @@ export async function getDashboardData(
   }
 }
 
+export interface FleetObservationResult {
+  observedAt: string;
+  spriteCount: number;
+  observationCount: number;
+  checkpointEventsRecorded: number;
+  warnings: string[];
+}
+
+/**
+ * Explicitly collect control-plane state into the local ledgers. Unlike a page
+ * render, this function is expected to write observations and checkpoint
+ * discovery events. It never requests a Sprite's public app URL.
+ */
+export async function observeSpriteFleet(
+  observedAt = new Date()
+): Promise<FleetObservationResult> {
+  const source = getSpriteDataSource();
+  const list = await runSpriteApi<SpriteListResponse>("/v1/sprites/");
+  const latestHealthProbes = await readLatestHealthProbes().catch(
+    () => new Map<string, HealthProbeRecord>()
+  );
+  const sprites = await Promise.all(
+    list.sprites.map(async (sprite): Promise<DashboardSprite> => {
+      const checkpoints = await getCheckpoints(sprite.name);
+      const health = resolveStoredHealth(
+        sprite,
+        latestHealthProbes.get(sprite.name)
+      );
+      return {
+        ...sprite,
+        checkpoints: checkpoints.items,
+        checkpointCountLoaded: true,
+        checkpointError: checkpoints.error,
+        health,
+        sleep: inferSleep(sprite, health),
+      };
+    })
+  );
+  const exposure = await observeCostExposure({
+    sprites,
+    source: `collector:${source}`,
+    observedAt,
+  });
+  const warnings: string[] = [];
+  if (exposure.writeError) warnings.push(exposure.writeError);
+
+  let checkpointEventsRecorded = 0;
+  for (const sprite of sprites) {
+    if (sprite.checkpointError) {
+      warnings.push(`${sprite.name}: ${sprite.checkpointError}`);
+      continue;
+    }
+    try {
+      checkpointEventsRecorded += await recordObservedCheckpoints(
+        sprite,
+        observedAt
+      );
+    } catch (err) {
+      warnings.push(
+        `${sprite.name}: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  }
+
+  return {
+    observedAt: observedAt.toISOString(),
+    spriteCount: sprites.length,
+    observationCount: sprites.length,
+    checkpointEventsRecorded,
+    warnings,
+  };
+}
+
+export async function runSpriteHealthProbe({
+  spriteName: spriteNameInput,
+  path,
+  expectedStatuses,
+  now = new Date(),
+}: {
+  spriteName: unknown;
+  path?: unknown;
+  expectedStatuses?: unknown;
+  now?: Date;
+}): Promise<HealthProbeRecord> {
+  const spriteName = validateSpriteNameInput(spriteNameInput);
+  const list = await runSpriteApi<SpriteListResponse>("/v1/sprites/");
+  const sprite = list.sprites.find((item) => item.name === spriteName);
+  if (!sprite) throw new Error(`Sprite '${spriteName}' was not found.`);
+
+  const result = await probePublicSpriteHealth({
+    spriteName,
+    spriteUrl: sprite.url,
+    urlAuth: sprite.url_settings?.auth,
+    path,
+    expectedStatuses,
+    now,
+  });
+  await recordHealthProbe(result);
+  return result;
+}
+
+export async function getSpriteRuntimeEvidence(
+  spriteNameInput: unknown,
+  now = new Date()
+): Promise<SpriteRuntimeEvidence> {
+  const spriteName = validateSpriteNameInput(spriteNameInput);
+  const [servicesResult, sessionsResult] = await Promise.allSettled([
+    runSpriteApi<unknown>(
+      `/v1/sprites/${encodeURIComponent(spriteName)}/services`
+    ),
+    runSpriteApi<unknown>(`/v1/sprites/${encodeURIComponent(spriteName)}/exec`),
+  ]);
+  const errors: string[] = [];
+  const services =
+    servicesResult.status === "fulfilled"
+      ? parseSpriteServices(servicesResult.value)
+      : [];
+  const sessions =
+    sessionsResult.status === "fulfilled"
+      ? parseSpriteExecSessions(sessionsResult.value)
+      : [];
+
+  if (servicesResult.status === "rejected") {
+    errors.push(
+      `Services: ${servicesResult.reason instanceof Error ? servicesResult.reason.message : String(servicesResult.reason)}`
+    );
+  }
+  if (sessionsResult.status === "rejected") {
+    errors.push(
+      `Exec sessions: ${sessionsResult.reason instanceof Error ? sessionsResult.reason.message : String(sessionsResult.reason)}`
+    );
+  }
+
+  const activeSessionCount = sessions.filter((session) => session.active).length;
+  const runningServices = services.filter(
+    (service) => service.state === "running"
+  );
+  const keepaliveServices = runningServices.filter(
+    (service) => service.keepaliveNamed
+  );
+  const assessment =
+    activeSessionCount > 0
+      ? {
+          label: "Active exec session present",
+          tone: "warn" as const,
+          detail: `${activeSessionCount} active exec session${activeSessionCount === 1 ? " is" : "s are"} direct control-plane evidence of current activity.`,
+        }
+      : keepaliveServices.length > 0
+        ? {
+            label: "Keepalive service present",
+            tone: "warn" as const,
+            detail:
+              "A running keepalive-named service is strong evidence of intentional activity, but metadata alone cannot prove what the process is doing.",
+          }
+        : runningServices.length > 0
+          ? {
+              label: "Running services present",
+              tone: "neutral" as const,
+              detail:
+                "Service state alone does not prove a keep-awake cause; the process must still maintain activity or an open connection.",
+            }
+          : {
+              label: "No direct keep-awake evidence",
+              tone: "good" as const,
+              detail:
+                "No active exec sessions or running Services were visible in these control-plane endpoints.",
+            };
+
+  return {
+    spriteName,
+    services,
+    sessions,
+    activeSessionCount,
+    runningServiceCount: runningServices.length,
+    assessment,
+    errors,
+    fetchedAt: now.toISOString(),
+  };
+}
+
+export function parseSpriteServices(value: unknown): SpriteRuntimeService[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (!isRecord(entry) || typeof entry.name !== "string") return [];
+    const state = isRecord(entry.state) ? entry.state : {};
+    const args = Array.isArray(entry.args)
+      ? entry.args.filter((arg): arg is string => typeof arg === "string")
+      : [];
+    const command = sanitizeRuntimeCommand(
+      typeof entry.cmd === "string" ? entry.cmd : "",
+      args
+    );
+    const name = entry.name.slice(0, 160);
+    return [
+      {
+        name,
+        command,
+        state:
+          typeof state.status === "string" ? state.status : "unknown",
+        pid: typeof state.pid === "number" ? state.pid : null,
+        httpPort:
+          typeof entry.http_port === "number" ? entry.http_port : null,
+        startedAt:
+          typeof state.started_at === "string" ? state.started_at : null,
+        keepaliveNamed: /keep[-_ ]?alive|heartbeat/i.test(
+          `${name} ${command}`
+        ),
+      },
+    ];
+  });
+}
+
+export function parseSpriteExecSessions(value: unknown): SpriteExecSession[] {
+  const sessions = Array.isArray(value)
+    ? value
+    : isRecord(value) && Array.isArray(value.sessions)
+      ? value.sessions
+      : [];
+  return sessions.flatMap((entry) => {
+    if (!isRecord(entry) || typeof entry.id !== "string") return [];
+    return [
+      {
+        id: entry.id.slice(0, 160),
+        command: sanitizeRuntimeCommand(
+          typeof entry.command === "string" ? entry.command : "",
+          []
+        ),
+        active: entry.is_active === true,
+        createdAt: typeof entry.created === "string" ? entry.created : null,
+        lastActivityAt:
+          typeof entry.last_activity === "string" ? entry.last_activity : null,
+        workdir: typeof entry.workdir === "string" ? entry.workdir : null,
+      },
+    ];
+  });
+}
+
+export function isRestorableCheckpoint(
+  checkpoint: Pick<SpriteCheckpoint, "id">
+): boolean {
+  return checkpoint.id.toLowerCase() !== "current";
+}
+
+function sanitizeRuntimeCommand(command: string, args: string[]): string {
+  const secretFlag = /(?:token|secret|password|api[-_]?key)/i;
+  const parts = [command, ...args].slice(0, 32);
+  let redactNext = false;
+  return parts
+    .map((part) => {
+      if (redactNext) {
+        redactNext = false;
+        return "[redacted]";
+      }
+      if (part.startsWith("-") && secretFlag.test(part)) {
+        redactNext = !part.includes("=");
+        return part.includes("=")
+          ? `${part.slice(0, part.indexOf("=") + 1)}[redacted]`
+          : part;
+      }
+      if (/^[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API_KEY)=/i.test(part)) {
+        return `${part.slice(0, part.indexOf("=") + 1)}[redacted]`;
+      }
+      return part;
+    })
+    .join(" ")
+    .slice(0, 500);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 // Read a generous window so an old checkpoint's linked events don't age out
 // and cause a duplicate observed event on a later refresh.
 const OBSERVED_LINK_LOOKBACK = 1000;
 
-async function recordObservedCheckpoints(sprite: DashboardSprite): Promise<void> {
-  if (sprite.checkpointError || sprite.checkpoints.length === 0) return;
+async function recordObservedCheckpoints(
+  sprite: DashboardSprite,
+  observedAt: Date
+): Promise<number> {
+  if (sprite.checkpointError || sprite.checkpoints.length === 0) return 0;
 
   const events = await readAgentRunEventsForSprite(
     sprite.name,
@@ -679,18 +981,24 @@ async function recordObservedCheckpoints(sprite: DashboardSprite): Promise<void>
   );
   const linked = getLinkedCheckpointIds(events);
 
+  let recorded = 0;
   for (const checkpoint of sprite.checkpoints) {
+    if (!isRestorableCheckpoint(checkpoint)) continue;
     if (linked.has(checkpoint.id)) continue;
     await recordAgentRunEvent(
-      buildCheckpointCreatedEventInput({
+      buildCheckpointObservedEventInput({
         spriteName: sprite.name,
         checkpointId: checkpoint.id,
+        checkpointCreatedAt: checkpoint.create_time,
+        observedAt: observedAt.toISOString(),
         comment: checkpoint.comment ?? null,
-        appHealth: sprite.health.label,
-        source: "observed",
-      })
+      }),
+      observedAt
     );
+    linked.add(checkpoint.id);
+    recorded += 1;
   }
+  return recorded;
 }
 
 export function getSpriteDataSource(): SpriteDataSource {
@@ -794,43 +1102,23 @@ async function getCheckpoints(
   }
 }
 
-async function checkSpriteHealth(sprite: SpriteSummary): Promise<HealthCheckResult> {
-  if (!sprite.url) {
-    return {
-      status: "skipped",
-      label: "No URL",
-      detail: "This Sprite does not expose an app URL.",
-    };
-  }
-
-  if (sprite.url_settings?.auth && sprite.url_settings.auth !== "public") {
-    return {
-      status: "blocked",
-      label: "Auth gated",
-      detail: `URL auth is '${sprite.url_settings.auth}', so public health checks are intentionally skipped.`,
-    };
-  }
-
-  try {
-    const res = await fetch(sprite.url, {
-      method: "HEAD",
-      cache: "no-store",
-      signal: AbortSignal.timeout(2500),
+function resolveStoredHealth(
+  sprite: SpriteSummary,
+  stored: HealthProbeRecord | undefined
+): HealthCheckResult {
+  if (!sprite.url || sprite.url_settings?.auth !== "public") {
+    return getHealthWithoutProbe({
+      url: sprite.url,
+      urlAuth: sprite.url_settings?.auth,
     });
-    return {
-      status: res.ok ? "ok" : "failed",
-      label: `${res.status} ${res.statusText || ""}`.trim(),
-      detail: res.ok
-        ? "The app URL responded to a lightweight health check."
-        : "The app URL responded, but not with a successful status.",
-    };
-  } catch (err) {
-    return {
-      status: "failed",
-      label: "No response",
-      detail: err instanceof Error ? err.message : String(err),
-    };
   }
+  return (
+    stored ??
+    getHealthWithoutProbe({
+      url: sprite.url,
+      urlAuth: sprite.url_settings?.auth,
+    })
+  );
 }
 
 function inferSleep(

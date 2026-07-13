@@ -14,7 +14,13 @@ const EVENT_OPTIONS = [
   { value: "run_completed", label: "Run completed" },
 ] as const;
 
-export function AgentRunEventForm({ spriteName }: { spriteName: string }) {
+export function AgentRunEventForm({
+  spriteName,
+  canWrite,
+}: {
+  spriteName: string;
+  canWrite: boolean;
+}) {
   const router = useRouter();
   const [type, setType] = useState<(typeof EVENT_OPTIONS)[number]["value"]>(
     "run_started"
@@ -180,10 +186,14 @@ export function AgentRunEventForm({ spriteName }: { spriteName: string }) {
       <div className="mt-3 flex justify-end">
         <button
           className="rounded-full bg-slate-950 px-5 py-3 text-sm font-bold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={isPending}
+          disabled={isPending || !canWrite}
           type="submit"
         >
-          {isPending ? "Recording..." : "Record event"}
+          {isPending
+            ? "Recording..."
+            : canWrite
+              ? "Record event"
+              : "Write access locked"}
         </button>
       </div>
 

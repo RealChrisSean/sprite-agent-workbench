@@ -65,6 +65,9 @@ export interface CostExposureSummary {
   windowStartedAt: string;
   disclaimer: string;
   observationCount: number;
+  collectionCount: number;
+  lastCollectedAt: string | null;
+  activeTimeStatus: "insufficient" | "estimated";
   runningNow: number;
   warmNow: number;
   activeNow: number;
@@ -113,6 +116,35 @@ export async function observeCostExposure({
   return buildCostExposureSummary({
     observations: storedObservations,
     currentObservations: observations,
+    now: observedAt,
+    writeError,
+  });
+}
+
+export async function readCostExposure({
+  sprites,
+  source,
+  observedAt = new Date(),
+}: {
+  sprites: ObservableSprite[];
+  source: string;
+  observedAt?: Date;
+}): Promise<CostExposureSummary> {
+  const currentObservations = sprites.map((sprite) =>
+    createSpriteObservation(sprite, source, observedAt)
+  );
+  let observations: SpriteObservation[] = [];
+  let writeError: string | null = null;
+
+  try {
+    observations = await readSpriteObservations();
+  } catch (err) {
+    writeError = err instanceof Error ? err.message : String(err);
+  }
+
+  return buildCostExposureSummary({
+    observations,
+    currentObservations,
     now: observedAt,
     writeError,
   });
@@ -174,6 +206,17 @@ export function buildCostExposureSummary({
 }): CostExposureSummary {
   const generatedAt = now.toISOString();
   const windowStartedAt = new Date(now.getTime() - DEFAULT_WINDOW_MS).toISOString();
+  const windowStartedMs = Date.parse(windowStartedAt);
+  const generatedMs = now.getTime();
+  const windowObservations = observations.filter(
+    (observation) => {
+      const observedMs = Date.parse(observation.observedAt);
+      return observedMs >= windowStartedMs && observedMs <= generatedMs;
+    }
+  );
+  const collectionTimes = [...new Set(
+    windowObservations.map((observation) => observation.observedAt)
+  )].sort();
   const currentByName = new Map(
     currentObservations.map((observation) => [
       observation.spriteName,
@@ -184,7 +227,7 @@ export function buildCostExposureSummary({
     .map((current) =>
       buildSpriteExposureSummary({
         current,
-        observations: observations.filter(
+        observations: windowObservations.filter(
           (observation) => observation.spriteName === current.spriteName
         ),
         now,
@@ -214,8 +257,12 @@ export function buildCostExposureSummary({
     generatedAt,
     windowStartedAt,
     disclaimer:
-      "Estimated from Workbench observations, not official Fly or Sprites billing.",
-    observationCount: observations.length,
+      "State-duration estimate from explicit Workbench collections, not official Fly or Sprites billing.",
+    observationCount: windowObservations.length,
+    collectionCount: collectionTimes.length,
+    lastCollectedAt: collectionTimes.at(-1) ?? null,
+    activeTimeStatus:
+      collectionTimes.length >= 2 ? "estimated" : "insufficient",
     runningNow,
     warmNow,
     activeNow: runningNow + warmNow,
@@ -228,8 +275,7 @@ export function buildCostExposureSummary({
       publicUrlCount,
       totalObservedActiveMs,
       writeError,
-      observationCount: observations.length,
-      currentCount: currentObservations.length,
+      collectionCount: collectionTimes.length,
     }),
     sprites: summaries,
   };
@@ -342,16 +388,14 @@ function buildFleetRiskFlags({
   publicUrlCount,
   totalObservedActiveMs,
   writeError,
-  observationCount,
-  currentCount,
+  collectionCount,
 }: {
   runningNow: number;
   warmNow: number;
   publicUrlCount: number;
   totalObservedActiveMs: number;
   writeError: string | null;
-  observationCount: number;
-  currentCount: number;
+  collectionCount: number;
 }): CostRiskFlag[] {
   const flags: CostRiskFlag[] = [];
 
@@ -387,15 +431,15 @@ function buildFleetRiskFlags({
   if (writeError) {
     flags.push({
       severity: "warning",
-      label: "Ledger write failed",
+      label: "Ledger unavailable",
       detail: writeError,
     });
-  } else if (observationCount <= currentCount) {
+  } else if (collectionCount < 2) {
     flags.push({
       severity: "info",
-      label: "New ledger",
+      label: "Insufficient samples",
       detail:
-        "Refresh a few times over normal use before treating observed active time as useful.",
+        "Run the protected collector at least twice before treating observed active time as an estimate.",
     });
   }
 
@@ -417,7 +461,7 @@ function buildSpriteRiskFlags({
     flags.push({
       severity: "warning",
       label: "Running now",
-      detail: "This Sprite is active at the latest refresh.",
+      detail: "This Sprite is active in the latest control-plane read.",
     });
   } else if (current.status === "warm") {
     flags.push({
@@ -437,7 +481,7 @@ function buildSpriteRiskFlags({
     flags.push({
       severity: "warning",
       label: "30m+ observed active",
-      detail: "Workbench has observed this Sprite active across multiple refreshes.",
+      detail: "Workbench has observed this Sprite active across explicit collections.",
     });
   }
   if (

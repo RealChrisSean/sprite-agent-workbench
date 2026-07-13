@@ -6,7 +6,7 @@ Sprite Agent Workbench is a visual dashboard for building with [Sprites](https:/
 
 I built it because Sprites make agent work persistent, and persistent state gets hard to track fast. Once an agent can keep files, expose URLs, sleep, wake, and checkpoint itself, I want to see what it is doing without digging through commands every time.
 
-This does not replace the Sprites dashboard or the Sprite CLI. It is the workbench I wanted open while building: fleet state, warm/cold signals, URL auth, and checkpoints in one place.
+This does not replace the Sprites dashboard or the Sprite CLI. It is the workbench I wanted open while building: fleet state, warm/cold signals, URL auth, Services and exec-session evidence, checkpoints, and sampled cost exposure in one place.
 
 ## Who This Is For
 
@@ -27,7 +27,38 @@ The terminal is still useful. This is for the moments where seeing the state is 
 
 The fleet view shows every Sprite visible to the configured account, grouped by running, warm, cold, and unknown state. It also shows why the app thinks a Sprite is warm or cold, which URL auth mode it uses, and when it was last running or warming.
 
-The selected Sprite view focuses on checkpoints. It shows the checkpoint timeline, timestamps, context, and a confirmation-gated restore action for the checkpoint you decide to trust.
+The selected Sprite view adds read-only Services and exec-session evidence, explicit HTTP health probes, checkpoint provenance, and a confirmation-gated restore action. A page render reads control-plane data and stored ledgers; it does not request Sprite app URLs or append observations.
+
+HTTP probes are explicit because any request to a Sprite URL can wake it. The
+probe uses `GET`, lets you configure the path and accepted statuses (including
+an intentional `404`), and records when the result was observed.
+
+## Write Access
+
+The dashboard is read-only unless `WORKBENCH_ADMIN_TOKEN` is configured and an
+admin unlocks an eight-hour HttpOnly session. Same-origin validation remains a
+CSRF control; it is not treated as authorization.
+
+Machine collectors and agent runners use a separate secret:
+
+```bash
+WORKBENCH_ADMIN_TOKEN=<random-admin-secret>
+WORKBENCH_INGEST_TOKEN=<different-random-ingest-secret>
+```
+
+They send the ingest secret in `X-Workbench-Ingest-Token`. Keep both values
+server-side and never prefix them with `NEXT_PUBLIC_`.
+
+For this repo's local/hosted pair, provision both without printing them:
+
+```bash
+npm run secrets:provision
+```
+
+The command reuses existing local values or generates new 32-byte values,
+writes ignored `.env.local` files with mode `600`, and streams the remote
+payload over stdin so secrets are not embedded in exec-session command text.
+Do not create a Sprite checkpoint afterward.
 
 ## Keep The Token Out Of The Browser
 
@@ -155,7 +186,32 @@ The production start script uses that port:
 npm start
 ```
 
-If you override the port, make sure the Sprite URL proxy can reach it. Running the app on `3000` may work inside the Sprite but fail from the public URL.
+Register the web process as a Sprite Service so it starts again after
+hibernation and can be auto-started by an HTTP request. After the first setup,
+the deploy command pulls `main`, installs, builds, restarts the Service, and
+checks localhost:
+
+```bash
+npm run deploy:sprite
+```
+
+The deploy path does not create a checkpoint, because the hosted filesystem can
+contain `.env.local` and other secret-bearing files.
+
+## Explicit Fleet Collection
+
+Page refresh is read-only. To append fleet status samples and discover
+checkpoints created outside the Workbench, run the protected collector:
+
+```bash
+WORKBENCH_URL=https://your-workbench.example \
+WORKBENCH_INGEST_TOKEN=<secret> \
+npm run observe
+```
+
+Schedule that command outside the Workbench Sprite if you need regular samples;
+a resident polling process would itself affect idle behavior. The UI reports
+`Insufficient samples` until at least two collection times exist.
 
 ## Checkpoint With Context
 
@@ -181,8 +237,10 @@ npm run checkpoint -- "before auth refactor"
 ```
 
 The Sprite is resolved from the local `.sprite` file (override with
-`--sprite`). Checkpoints made any other way still show up because the Workbench
-observes them passively, but only this command records the rich context.
+`--sprite`). Checkpoints made any other way still appear in the platform list.
+The explicit fleet collector records them as `checkpoint_observed`, preserving
+both the platform creation time and the later discovery time. Only the wrapper
+records rich context at creation time.
 
 > Do not use `npx workbench` — an unrelated `workbench` package exists on npm,
 > and npx may download and run it. Use the linked `workbench` binary or the
@@ -197,6 +255,7 @@ manual seed form. See [docs/AGENT_RUNNER.md](docs/AGENT_RUNNER.md) and
 
 ```bash
 export WORKBENCH_URL="http://localhost:1340"
+export WORKBENCH_INGEST_TOKEN="<app-ingest-secret>"
 export SPRITE_NAME="recallmem"
 node scripts/record-run-event.mjs start "Fix login redirect bug"
 ```
@@ -212,17 +271,10 @@ npx tsc --noEmit
 npm run build
 ```
 
-## Next
+## Cost Language
 
-The next useful thing is richer restore context.
-
-Restore exists, but it should keep getting harder to use casually. The current
-flow requires the Sprite name, an overwrite acknowledgement, and defaults to a
-safety checkpoint before restore.
-
-After that:
-
-- status history, so I can see when a Sprite went cold
-- checkpoint comparisons using the mounted checkpoint directories
-- more complete run tracking with commands, diffs, logs, tests, and summaries
-- an optional Codex skill once the product shape settles
+The fleet ledger is a sampled state-duration estimate, and the per-Sprite meter
+is a local counter-based estimate. Neither is an invoice. The meter applies the
+published CPU and memory billing floors, labels reset gaps, and treats optional
+`du` storage values as directory-size scenario proxies. See
+[docs/METERING.md](docs/METERING.md).

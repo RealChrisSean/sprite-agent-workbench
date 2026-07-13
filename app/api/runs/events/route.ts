@@ -1,6 +1,7 @@
 import {
+  assertAdminOrIngestRequest,
   assertJsonRequest,
-  assertSameOriginRequest,
+  getRequestErrorStatus,
 } from "../../../../lib/request-security";
 import { recordAgentRunEvent } from "../../../../lib/agent-runs";
 
@@ -9,7 +10,7 @@ export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   try {
-    assertSameOriginRequest(request);
+    assertAdminOrIngestRequest(request);
     assertJsonRequest(request);
 
     const body = (await request.json()) as Record<string, unknown>;
@@ -27,7 +28,7 @@ export async function POST(request: Request) {
         message:
           err instanceof Error ? err.message : "Could not record run event.",
       },
-      { status: 400 }
+      { status: getRequestErrorStatus(err) }
     );
   }
 }

@@ -28,16 +28,16 @@ export function parseCgroupInteger(text) {
 }
 
 /**
- * Real sampler: reads the same cgroup counters the platform bills from.
- * Storage is read via injected stat functions so the reader stays dependency-
- * free; hot = working dir bytes, cold = checkpoint/archive dir bytes.
- * @param {{ spriteName?: string, cgroupRoot?: string, hotStorageBytes?: () => Promise<number>, coldStorageBytes?: () => Promise<number>, read?: typeof import("node:fs/promises").readFile }} [opts]
+ * Real sampler: reads local cgroup counters. Optional storage callbacks are
+ * directory-size proxies, not the platform hot-cache/object-storage meters.
+ * @param {{ spriteName?: string, cgroupRoot?: string, hotStorageBytes?: () => Promise<number>, coldStorageBytes?: () => Promise<number>, storageMeasurement?: "none" | "directory-du", read?: typeof import("node:fs/promises").readFile }} [opts]
  */
 export function makeCgroupSampler({
   spriteName,
   cgroupRoot = CGROUP_ROOT,
   hotStorageBytes = async () => 0,
   coldStorageBytes = async () => 0,
+  storageMeasurement = "none",
   read = readFile,
 } = {}) {
   return async function sample(now = new Date()) {
@@ -55,6 +55,7 @@ export function makeCgroupSampler({
       storageHotBytes: Number(hot) || 0,
       storageColdBytes: Number(cold) || 0,
       source: "cgroup",
+      storageMeasurement,
     };
   };
 }
@@ -93,21 +94,48 @@ export function makeSyntheticSampler({
       storageHotBytes: Math.round(hotBaselineBytes),
       storageColdBytes: Math.round(coldBaselineBytes),
       source: "synthetic",
+      storageMeasurement: "directory-du",
     };
   };
 }
 
 /** POST one sample to the Workbench ingest route. Impure. */
-export async function postSample({ workbenchUrl, sample, fetchImpl = fetch }) {
+export async function postSample({
+  workbenchUrl,
+  sample,
+  ingestToken,
+  edgeToken = "",
+  fetchImpl = fetch,
+}) {
+  if (!ingestToken) {
+    throw new Error("WORKBENCH_INGEST_TOKEN is required.");
+  }
   const url = new URL("/api/meter/samples", workbenchUrl);
   const res = await fetchImpl(url, {
     method: "POST",
-    headers: { "content-type": "application/json", origin: url.origin },
+    headers: {
+      "content-type": "application/json",
+      "x-workbench-ingest-token": ingestToken,
+      ...(edgeToken ? { authorization: `Bearer ${edgeToken}` } : {}),
+    },
     body: JSON.stringify(sample),
+    redirect: "manual",
   });
-  const body = await res.json().catch(() => ({}));
+  if (res.status >= 300 && res.status < 400) {
+    throw new Error(`Workbench returned an unexpected redirect (${res.status}).`);
+  }
+  const contentType = res.headers.get("content-type") || "";
+  if (!contentType.toLowerCase().includes("application/json")) {
+    throw new Error(
+      `Workbench returned ${contentType || "a non-JSON response"}; refusing to treat it as ingest success.`
+    );
+  }
+  const body = await res.json();
   if (!res.ok) {
     throw new Error(body.message || `Workbench returned HTTP ${res.status}`);
+  }
+  if (body.ok !== true) {
+    throw new Error("Workbench JSON response did not confirm ingest success.");
   }
   return body;
 }

@@ -1,23 +1,11 @@
-// Near-exact usage metering for Sprites.
-//
-// The accurate tier. An on-Sprite reader (scripts/sprite-meter.mjs) samples the
-// same counters the platform bills from — cgroup `cpu.stat` usage_usec, cgroup
-// `memory.current`, and consumed storage — and POSTs them here. This module is
-// the pure math that turns a series of raw samples into CPU-hours, GB-hours, and
-// dollars, plus a reconciliation helper to prove the number against a real bill.
-//
-// Why this can be near-exact (and where it can't):
-//   - CPU usage_usec is a CUMULATIVE monotonic counter, so the delta between two
-//     samples is the exact CPU consumed in that window, regardless of sample
-//     rate. CPU has no aliasing error. We only have to handle counter resets
-//     (cold->warm cycles, checkpoint/restore recreate the cgroup).
-//   - memory.current and storage are INSTANTANEOUS, so we trapezoid-integrate
-//     them over time. That carries a small, sample-rate-dependent error.
-//   - Dollars depend on a rate card we transcribed from the pricing page; a free
-//     allowance, minimum, or rounding rule we can't see would shift the total.
-//     reconcile() exists to close exactly those unknowns against one invoice.
+// Counter-based local estimate for Sprites. CPU and memory come from Linux
+// cgroup counters, then the published per-second billing floors are applied.
+// This is not invoice data: counter resets, missing intervals, platform-side
+// sampling, and storage accounting can all move the billed result.
 
-export const BYTES_PER_GB = 1024 ** 3;
+export const BYTES_PER_GB = 1_000_000_000;
+export const MINIMUM_CPU_FRACTION = 0.0625;
+export const MINIMUM_MEMORY_GB = 0.25;
 const USEC_PER_HOUR = 3_600_000_000;
 const MS_PER_HOUR = 3_600_000;
 
@@ -55,6 +43,8 @@ export interface MeterSample {
   storageColdBytes: number;
   /** Source of the sample, for trust labeling. */
   source: string;
+  /** Storage is either unmeasured or a local directory-size proxy. */
+  storageMeasurement?: "none" | "directory-du";
 }
 
 export interface MeterCostBreakdown {
@@ -70,10 +60,14 @@ export interface MeterSummary {
   sampleCount: number;
   firstObservedAt: string | null;
   lastObservedAt: string | null;
-  /** Exact: derived from cumulative counter deltas. */
+  /** Estimated billable CPU-hours after the published per-second floor. */
   cpuHours: number;
-  /** Integrated: small sampling error. */
+  /** Raw CPU counter delta before the billing floor. */
+  rawCpuHours: number;
+  /** Estimated billable memory GB-hours after the published floor. */
   memoryGbHours: number;
+  /** Integrated memory.current before the billing floor. */
+  rawMemoryGbHours: number;
   hotStorageGbHours: number;
   coldStorageGbHours: number;
   cost: MeterCostBreakdown;
@@ -86,7 +80,7 @@ export interface MeterSummary {
   integratedMs: number;
   /** integratedMs / spanMs — confidence in the memory/storage figures. */
   coverage: number;
-  confidence: "exact-cpu-only" | "high" | "medium" | "low";
+  confidence: "counter-only" | "high" | "medium" | "low";
   notes: string[];
 }
 
@@ -114,10 +108,10 @@ export function getRateCardFromEnv(
 /**
  * Aggregate a series of raw samples into usage and cost. Pure.
  *
- * CPU is summed from counter deltas (reset-aware) so it is exact. Memory and
- * storage are trapezoid-integrated only across observed intervals no longer
- * than maxGapMs; intervals longer than that are counted toward the span but not
- * integrated, which lowers `coverage` honestly instead of fabricating usage.
+ * CPU is summed from counter deltas and the published utilization floor.
+ * Memory and storage are integrated only across observed intervals no longer
+ * than maxGapMs. A reset can hide CPU between samples, so reset windows are
+ * explicitly marked as uncertain instead of being called exact.
  */
 export function summarizeMeterSamples(
   samples: MeterSample[],
@@ -136,7 +130,9 @@ export function summarizeMeterSamples(
     firstObservedAt: sorted[0]?.observedAt ?? null,
     lastObservedAt: sorted[sorted.length - 1]?.observedAt ?? null,
     cpuHours: 0,
+    rawCpuHours: 0,
     memoryGbHours: 0,
+    rawMemoryGbHours: 0,
     hotStorageGbHours: 0,
     coldStorageGbHours: 0,
     cost: { cpu: 0, memory: 0, hotStorage: 0, coldStorage: 0, total: 0 },
@@ -159,8 +155,10 @@ export function summarizeMeterSamples(
   }
 
   let cpuUsec = 0;
+  let billableCpuUsec = 0;
   let cpuResets = 0;
   let memGbHours = 0;
+  let billableMemGbHours = 0;
   let hotGbHours = 0;
   let coldGbHours = 0;
   let spanMs = 0;
@@ -176,18 +174,33 @@ export function summarizeMeterSamples(
 
     // CPU: cumulative counter. Always counts, even across a reader-down gap.
     if (curr.cpuUsageUsec >= prev.cpuUsageUsec) {
-      cpuUsec += curr.cpuUsageUsec - prev.cpuUsageUsec;
+      const deltaUsec = curr.cpuUsageUsec - prev.cpuUsageUsec;
+      cpuUsec += deltaUsec;
+      billableCpuUsec += Math.max(
+        deltaUsec,
+        (dtMs / 1000) * MINIMUM_CPU_FRACTION * 1_000_000
+      );
     } else {
       // Counter went backwards => cgroup was recreated. Best estimate of usage
       // since the reset is the new (post-reset) reading itself.
       cpuUsec += curr.cpuUsageUsec;
+      billableCpuUsec += curr.cpuUsageUsec;
       cpuResets += 1;
     }
 
     // Memory/storage: instantaneous. Integrate only across observed intervals.
     if (dtMs <= maxGapMs) {
       const dtHours = dtMs / MS_PER_HOUR;
-      memGbHours += trapezoidGb(prev.memCurrentBytes, curr.memCurrentBytes, dtHours);
+      const intervalMemGbHours = trapezoidGb(
+        prev.memCurrentBytes,
+        curr.memCurrentBytes,
+        dtHours
+      );
+      memGbHours += intervalMemGbHours;
+      billableMemGbHours += Math.max(
+        intervalMemGbHours,
+        MINIMUM_MEMORY_GB * dtHours
+      );
       hotGbHours += trapezoidGb(prev.storageHotBytes, curr.storageHotBytes, dtHours);
       coldGbHours += trapezoidGb(prev.storageColdBytes, curr.storageColdBytes, dtHours);
       integratedMs += dtMs;
@@ -196,9 +209,10 @@ export function summarizeMeterSamples(
     }
   }
 
-  const cpuHours = cpuUsec / USEC_PER_HOUR;
+  const rawCpuHours = cpuUsec / USEC_PER_HOUR;
+  const cpuHours = billableCpuUsec / USEC_PER_HOUR;
   const cost = computeCost(
-    { cpuHours, memoryGbHours: memGbHours, hotStorageGbHours: hotGbHours, coldStorageGbHours: coldGbHours },
+    { cpuHours, memoryGbHours: billableMemGbHours, hotStorageGbHours: hotGbHours, coldStorageGbHours: coldGbHours },
     rateCard
   );
   const coverage = spanMs > 0 ? integratedMs / spanMs : 0;
@@ -206,7 +220,12 @@ export function summarizeMeterSamples(
   const notes: string[] = [];
   if (cpuResets > 0) {
     notes.push(
-      `${cpuResets} CPU counter reset${cpuResets === 1 ? "" : "s"} detected (cgroup recreated); CPU since each reset estimated from the next reading.`
+      `${cpuResets} CPU counter reset${cpuResets === 1 ? "" : "s"} detected (cgroup recreated); CPU before the first post-reset reading is not recoverable from these samples.`
+    );
+  }
+  if (sorted.some((sample) => sample.storageMeasurement === "directory-du")) {
+    notes.push(
+      "Storage came from local directory sizes. It is a scenario proxy, not the platform hot-cache or object-storage meter."
     );
   }
   if (gapCount > 0) {
@@ -218,7 +237,9 @@ export function summarizeMeterSamples(
   return {
     ...base,
     cpuHours,
-    memoryGbHours: memGbHours,
+    rawCpuHours,
+    memoryGbHours: billableMemGbHours,
+    rawMemoryGbHours: memGbHours,
     hotStorageGbHours: hotGbHours,
     coldStorageGbHours: coldGbHours,
     cost,
@@ -272,9 +293,8 @@ export interface Reconciliation {
 }
 
 /**
- * Compare a computed summary against a real invoice. This is the only thing
- * that turns "near-exact" into a provable number and calibrates the unknowns
- * (storage definition, rounding, allowances). targetPct defaults to 1% (99%).
+ * Compare a local estimate against a real invoice. Reconciliation measures the
+ * observed error; it does not make future counter estimates invoice-grade.
  */
 export function reconcile(
   summary: MeterSummary,
@@ -311,7 +331,7 @@ function trapezoidGb(prevBytes: number, currBytes: number, dtHours: number): num
 }
 
 function classifyConfidence(coverage: number, cpuResets: number): MeterSummary["confidence"] {
-  if (coverage <= 0) return "exact-cpu-only";
+  if (coverage <= 0) return "counter-only";
   if (coverage >= 0.95 && cpuResets === 0) return "high";
   if (coverage >= 0.75) return "medium";
   return "low";

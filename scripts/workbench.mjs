@@ -5,7 +5,9 @@
 // producing contextless checkpoint IDs.
 //
 // Environment:
-//   WORKBENCH_URL  Workbench base URL (default: http://localhost:3001)
+//   WORKBENCH_URL  Workbench base URL (default: http://localhost:1340)
+//   WORKBENCH_INGEST_TOKEN  Required to record dashboard context
+//   WORKBENCH_EDGE_TOKEN    Optional Sprite URL bearer token
 //   SPRITE_NAME    Override the Sprite (else read from ./.sprite)
 //   RUN_ID         Optional run grouping key (for record subcommands)
 //
@@ -41,7 +43,7 @@ function usage(message) {
       "  checkpoint [comment] [--sprite X] [--verify \"cmd\"] [--workbench-url U]",
       "  start | files | verify | complete | fail | event   (run-event verbs)",
       "",
-      "Env: WORKBENCH_URL, SPRITE_NAME (optional; else ./.sprite), RUN_ID",
+      "Env: WORKBENCH_URL, WORKBENCH_INGEST_TOKEN, SPRITE_NAME (optional; else ./.sprite), RUN_ID",
     ].join("\n")
   );
   process.exit(2);

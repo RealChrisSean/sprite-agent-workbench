@@ -62,7 +62,8 @@ reads green and `verify fail` reads red wherever it renders.
 ## Setup (once per task)
 
 ```bash
-export WORKBENCH_URL="http://localhost:3001"   # or the hosted Workbench URL
+export WORKBENCH_URL="http://localhost:1340"   # or the hosted Workbench URL
+export WORKBENCH_INGEST_TOKEN="<app-ingest-secret>"
 export SPRITE_NAME="recallmem"                 # the Sprite this work targets
 ```
 
@@ -111,9 +112,11 @@ export SPRITE_NAME="recallmem"                 # the Sprite this work targets
 - Recording events is best-effort: if the Workbench is unreachable, log it
   and continue the task. Never fail the user's work because telemetry
   failed.
-- The events API only accepts same-origin requests; the script handles the
-  Origin header for you. If you call the API directly, send
-  `Origin: <workbench origin>` and `content-type: application/json`.
+- The events API requires `X-Workbench-Ingest-Token` for machine writes. Browser
+  writes use a separate expiring admin session. Same-origin checks are CSRF
+  protection for the browser path, not machine identity.
+- If the hosted Sprite URL also needs edge auth, set
+  `WORKBENCH_EDGE_TOKEN`; the scripts use it only for `Authorization`.
 
 ## Payload reference (for direct API calls)
 
@@ -123,7 +126,7 @@ export SPRITE_NAME="recallmem"                 # the Sprite this work targets
 {
   "spriteName": "recallmem",
   "runId": "optional-grouping-key",
-  "type": "run_started | run_completed | run_failed | command_started | command_finished | file_changed | checkpoint_created | restore_performed",
+  "type": "run_started | run_completed | run_failed | command_started | command_finished | file_changed | checkpoint_created | checkpoint_observed | restore_performed",
   "label": "short human title",
   "summary": "optional, max 500 chars",
   "files": [{ "path": "app/page.tsx", "status": "M" }],

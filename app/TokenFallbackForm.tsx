@@ -5,8 +5,10 @@ import { FormEvent, useState, useTransition } from "react";
 
 export function TokenFallbackForm({
   hasSavedToken,
+  canWrite,
 }: {
   hasSavedToken: boolean;
+  canWrite: boolean;
 }) {
   const router = useRouter();
   const [token, setToken] = useState("");
@@ -83,7 +85,7 @@ export function TokenFallbackForm({
         {hasSavedToken ? (
           <button
             className="rounded-full border border-amber-400 px-4 py-2 text-sm font-bold transition hover:bg-amber-100 disabled:opacity-60"
-            disabled={isPending}
+            disabled={isPending || !canWrite}
             type="button"
             onClick={deleteToken}
           >
@@ -126,10 +128,10 @@ export function TokenFallbackForm({
 
         <button
           className="rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-white transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={isPending || !token.trim()}
+          disabled={isPending || !token.trim() || !canWrite}
           type="submit"
         >
-          Save fallback token
+          {canWrite ? "Save fallback token" : "Write access locked"}
         </button>
       </form>
 

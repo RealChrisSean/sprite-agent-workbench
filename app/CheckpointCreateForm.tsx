@@ -5,10 +5,10 @@ import { FormEvent, useState, useTransition } from "react";
 
 export function CheckpointCreateForm({
   spriteName,
-  appHealth,
+  canWrite,
 }: {
   spriteName: string;
-  appHealth?: string | null;
+  canWrite: boolean;
 }) {
   const router = useRouter();
   const [comment, setComment] = useState("");
@@ -30,7 +30,6 @@ export function CheckpointCreateForm({
         body: JSON.stringify({
           spriteName,
           comment,
-          ...(appHealth ? { appHealth } : {}),
         }),
       });
       const body = (await res.json()) as {
@@ -74,10 +73,14 @@ export function CheckpointCreateForm({
         </label>
         <button
           className="rounded-full bg-lime-300 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-lime-200 disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={isPending}
+          disabled={isPending || !canWrite}
           type="submit"
         >
-          {isPending ? "Creating..." : "Create checkpoint"}
+          {isPending
+            ? "Creating..."
+            : canWrite
+              ? "Create checkpoint"
+              : "Write access locked"}
         </button>
       </div>
       <p className="mt-3 text-xs leading-5 text-slate-500">

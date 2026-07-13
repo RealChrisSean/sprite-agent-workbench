@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { POST as createRunEventRoute } from "../app/api/runs/events/route";
 import {
   buildCheckpointCreatedEventInput,
+  buildCheckpointObservedEventInput,
   buildRestorePerformedEventInput,
   buildVerificationEventInput,
   getCheckpointContextEvents,
@@ -194,23 +195,27 @@ describe("agent run event storage", () => {
     expect(event.summary).not.toContain("before risky deploy");
   });
 
-  it("marks observed checkpoints with source=observed and a plain summary", () => {
+  it("records checkpoint creation time separately from discovery time", () => {
     const event = validateAgentRunEventInput(
-      buildCheckpointCreatedEventInput({
+      buildCheckpointObservedEventInput({
         spriteName: "sprite-agent-workbench",
         checkpointId: "v9",
+        checkpointCreatedAt: "2026-06-01T08:00:00Z",
+        observedAt: "2026-06-10T12:00:00Z",
         comment: null,
-        appHealth: "200 OK",
-        source: "observed",
+        healthWhenObserved: "200 OK",
       }),
       new Date("2026-06-10T12:00:00Z")
     );
+    expect(event.type).toBe("checkpoint_observed");
     expect(event.metadata).toMatchObject({
       checkpoint_id: "v9",
       source: "observed",
-      app_health: "200 OK",
+      checkpoint_created_at: "2026-06-01T08:00:00Z",
+      observed_at: "2026-06-10T12:00:00Z",
+      health_when_observed: "200 OK",
     });
-    expect(event.summary).toContain("Observed by Workbench");
+    expect(event.summary).toContain("Discovered by Workbench");
   });
 
   it("collects the checkpoint ids that already have linked events", () => {
@@ -220,8 +225,16 @@ describe("agent run event storage", () => {
     ];
     events[0].metadata = { checkpoint_id: "v9" };
     events[1].metadata = { checkpoint_id: "v8" };
+    const legacyObserved = makeEventAt(
+      "2026-06-10T12:02:00Z",
+      "checkpoint_created"
+    );
+    legacyObserved.metadata = {
+      checkpoint_id: "v7",
+      source: "observed",
+    };
 
-    const linked = getLinkedCheckpointIds(events);
+    const linked = getLinkedCheckpointIds([...events, legacyObserved]);
     expect(linked.has("v9")).toBe(true);
     expect(linked.has("v8")).toBe(true);
     expect(linked.has("v7")).toBe(false);
@@ -428,15 +441,16 @@ function makeEventAt(
 }
 
 describe("agent run event route", () => {
-  it("records a run event through a same-origin JSON request", async () => {
+  it("records a run event with the machine ingest credential", async () => {
     useRunEventFile();
+    vi.stubEnv("WORKBENCH_INGEST_TOKEN", "ingest-test-token");
 
     const response = await createRunEventRoute(
       new Request("http://localhost/api/runs/events", {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          origin: "http://localhost",
+          "x-workbench-ingest-token": "ingest-test-token",
         },
         body: JSON.stringify({
           spriteName: "sprite-agent-workbench",
@@ -464,13 +478,14 @@ describe("agent run event route", () => {
 
   it("records a file_changed event through the route", async () => {
     useRunEventFile();
+    vi.stubEnv("WORKBENCH_INGEST_TOKEN", "ingest-test-token");
 
     const response = await createRunEventRoute(
       new Request("http://localhost/api/runs/events", {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          origin: "http://localhost",
+          "x-workbench-ingest-token": "ingest-test-token",
         },
         body: JSON.stringify({
           spriteName: "sprite-agent-workbench",
@@ -525,7 +540,7 @@ describe("agent run event route", () => {
     );
     const body = (await response.json()) as { ok?: boolean; message?: string };
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(403);
     expect(body.ok).toBe(false);
     expect(body.message).toContain("Origin");
     await expect(

@@ -6,11 +6,13 @@ import { FormEvent, useState, useTransition } from "react";
 export function RestoreCheckpointForm({
   spriteName,
   checkpointId,
+  canWrite,
   overwriteEventCount = 0,
   overwriteFileCount = 0,
 }: {
   spriteName: string;
   checkpointId: string;
+  canWrite: boolean;
   overwriteEventCount?: number;
   overwriteFileCount?: number;
 }) {
@@ -74,7 +76,10 @@ export function RestoreCheckpointForm({
   }
 
   const canSubmit =
-    confirmSpriteName === spriteName && acknowledgeOverwrite && !isPending;
+    canWrite &&
+    confirmSpriteName === spriteName &&
+    acknowledgeOverwrite &&
+    !isPending;
 
   return (
     <details className="mt-4 rounded-2xl border border-red-900/50 bg-red-950/20">

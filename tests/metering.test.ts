@@ -21,7 +21,7 @@ function sample(overrides: Partial<MeterSample> & { observedAt: string }): Meter
   };
 }
 
-describe("summarizeMeterSamples — CPU is exact from the cumulative counter", () => {
+describe("summarizeMeterSamples — CPU counter estimate", () => {
   it("sums counter deltas regardless of interval", () => {
     // 7200 CPU-seconds over the window => 2 CPU-hours exactly.
     const samples = [
@@ -33,6 +33,20 @@ describe("summarizeMeterSamples — CPU is exact from the cumulative counter", (
     expect(summary.cpuHours).toBeCloseTo(2, 9);
     expect(summary.cost.cpu).toBeCloseTo(2 * 0.07, 9);
     expect(summary.cpuResets).toBe(0);
+  });
+
+  it("applies the published CPU and memory billing floors", () => {
+    const samples = [
+      sample({ observedAt: "2026-06-20T00:00:00Z", cpuUsageUsec: 0 }),
+      sample({ observedAt: "2026-06-20T01:00:00Z", cpuUsageUsec: 0 }),
+    ];
+    const summary = summarizeMeterSamples(samples, {
+      maxGapMs: 2 * 60 * 60 * 1000,
+    });
+    expect(summary.rawCpuHours).toBe(0);
+    expect(summary.cpuHours).toBeCloseTo(0.0625, 9);
+    expect(summary.rawMemoryGbHours).toBe(0);
+    expect(summary.memoryGbHours).toBeCloseTo(0.25, 9);
   });
 
   it("handles a counter reset (cgroup recreated) without going negative", () => {
@@ -90,7 +104,7 @@ describe("summarizeMeterSamples — memory/storage integration", () => {
     const summary = summarizeMeterSamples(samples, { maxGapMs: 60_000 });
     expect(summary.memoryGbHours).toBe(0); // gap skipped, no invented usage
     expect(summary.coverage).toBe(0);
-    expect(summary.confidence).toBe("exact-cpu-only");
+    expect(summary.confidence).toBe("counter-only");
   });
 
   it("reconstructs the published Claude Code Session example within ~1%", () => {

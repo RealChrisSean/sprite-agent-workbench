@@ -6,7 +6,13 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-export const DEFAULT_WORKBENCH_URL = "http://localhost:3001";
+try {
+  process.loadEnvFile?.(".env.local");
+} catch (err) {
+  if (!err || typeof err !== "object" || err.code !== "ENOENT") throw err;
+}
+
+export const DEFAULT_WORKBENCH_URL = "http://localhost:1340";
 export const MAX_FILES = 200;
 
 /** Remove `--flag value` from args, returning the value and the rest. */
@@ -87,25 +93,43 @@ export function lastCommitSubject() {
 }
 
 /** POST an event to the Workbench ingestion sink (impure). */
-export async function postEvent({ workbenchUrl, spriteName, runId, payload }) {
+export async function postEvent({
+  workbenchUrl,
+  spriteName,
+  runId,
+  payload,
+  ingestToken = process.env.WORKBENCH_INGEST_TOKEN,
+  edgeToken = process.env.WORKBENCH_EDGE_TOKEN,
+}) {
+  if (!ingestToken) throw new Error("WORKBENCH_INGEST_TOKEN is required.");
   const url = new URL("/api/runs/events", workbenchUrl);
   const res = await fetch(url, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      // The Workbench only accepts same-origin writes; this is a first-party
-      // CLI, so it sets the Origin to the target itself.
-      origin: url.origin,
+      "x-workbench-ingest-token": ingestToken,
+      ...(edgeToken ? { authorization: `Bearer ${edgeToken}` } : {}),
     },
     body: JSON.stringify({
       spriteName,
       ...(runId ? { runId } : {}),
       ...payload,
     }),
+    redirect: "manual",
   });
-  const body = await res.json().catch(() => ({}));
+  if (res.status >= 300 && res.status < 400) {
+    throw new Error(`Workbench returned an unexpected redirect (${res.status}).`);
+  }
+  const contentType = res.headers.get("content-type") || "";
+  if (!contentType.toLowerCase().includes("application/json")) {
+    throw new Error("Workbench returned a non-JSON response.");
+  }
+  const body = await res.json();
   if (!res.ok) {
     throw new Error(body.message || `Workbench returned HTTP ${res.status}`);
+  }
+  if (body.ok !== true) {
+    throw new Error("Workbench JSON response did not confirm success.");
   }
   return body;
 }

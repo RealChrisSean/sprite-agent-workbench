@@ -72,33 +72,60 @@ describe("makeSyntheticSampler", () => {
 });
 
 describe("postSample", () => {
-  it("posts to /api/meter/samples with a same-origin header", async () => {
+  it("posts to /api/meter/samples with the ingest token and no redirects", async () => {
     let captured: { url: string; init: RequestInit } | null = null;
     const fetchImpl = (async (url: URL, init: RequestInit) => {
       captured = { url: url.toString(), init };
-      return { ok: true, json: async () => ({ ok: true }) };
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { "content-type": "application/json" },
+      });
     }) as unknown as typeof fetch;
 
     await postSample({
       workbenchUrl: "http://localhost:3001",
       sample: { spriteName: "demo" },
+      ingestToken: "ingest-test-token",
       fetchImpl,
     });
 
     expect(captured!.url).toBe("http://localhost:3001/api/meter/samples");
-    expect((captured!.init.headers as Record<string, string>).origin).toBe(
-      "http://localhost:3001"
-    );
+    expect(
+      (captured!.init.headers as Record<string, string>)[
+        "x-workbench-ingest-token"
+      ]
+    ).toBe("ingest-test-token");
+    expect(captured!.init.redirect).toBe("manual");
   });
 
   it("throws on a non-ok response", async () => {
-    const fetchImpl = (async () => ({
-      ok: false,
-      status: 400,
-      json: async () => ({ message: "bad" }),
-    })) as unknown as typeof fetch;
+    const fetchImpl = (async () =>
+      new Response(JSON.stringify({ message: "bad" }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      })) as unknown as typeof fetch;
     await expect(
-      postSample({ workbenchUrl: "http://localhost:3001", sample: {}, fetchImpl })
+      postSample({
+        workbenchUrl: "http://localhost:3001",
+        sample: {},
+        ingestToken: "ingest-test-token",
+        fetchImpl,
+      })
     ).rejects.toThrow("bad");
+  });
+
+  it("rejects HTML that could be a followed auth page", async () => {
+    const fetchImpl = (async () =>
+      new Response("<html>sign in</html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      })) as unknown as typeof fetch;
+    await expect(
+      postSample({
+        workbenchUrl: "http://localhost:3001",
+        sample: {},
+        ingestToken: "ingest-test-token",
+        fetchImpl,
+      })
+    ).rejects.toThrow("refusing to treat it as ingest success");
   });
 });

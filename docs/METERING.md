@@ -1,87 +1,104 @@
-# Metering — near-exact usage & cost
+# Metering: local counter-based estimates
 
-Sprites bill for **actual CPU cycles, resident memory, and consumed storage** —
-not wall-clock uptime. A 4-hour mostly-idle session bills ~2.4 CPU-hours, not 4.
-So uptime is the wrong number for cost; it's only a "something is running /
-forgotten" signal.
+Sprites bills CPU time, memory time, hot storage, and cold storage. The
+Workbench meter is a local estimator for those dimensions. It is not the
+Sprites billing system and it does not report an invoice-grade total.
 
-This adds an **accurate tier** that measures the same quantities the platform
-bills from, by reading them from *inside* the Sprite.
+## Two different signals
 
-## Two tiers
+| Signal | Source | What it can answer |
+| --- | --- | --- |
+| Fleet observation ledger | Sprites control-plane status | What was running or warm when the protected collector sampled it? |
+| Local meter | cgroup counters inside one Sprite | What usage and cost range do these local samples imply? |
 
-| Tier | Source | What it answers | Accuracy |
-|---|---|---|---|
-| Smoke detector | `cost-ledger.ts` (state polling) | Is anything running / public / lingering? | Coarse, zero-install, whole fleet |
-| **Meter** (this) | `sprite-meter.mjs` (cgroup counters) | What will I actually pay? | Near-exact, opt-in per Sprite |
+Neither is a replacement for the Sprites billing dashboard.
 
-## How the meter works
+## Inputs and billing floors
 
-An on-Sprite reader samples and POSTs raw counters to the Workbench:
+The reader samples:
 
-| Billed quantity | Source inside the Sprite | Nature |
-|---|---|---|
-| CPU-seconds | `/sys/fs/cgroup/cpu.stat` → `usage_usec` | **cumulative counter** |
-| Resident memory | `/sys/fs/cgroup/memory.current` | instantaneous |
-| Storage (hot/cold) | `du -sb` on the data dirs | instantaneous |
+| Dimension | Local input | Important limit |
+| --- | --- | --- |
+| CPU | `/sys/fs/cgroup/cpu.stat` `usage_usec` | A counter reset can hide usage between samples. |
+| Memory | `/sys/fs/cgroup/memory.current` | Instantaneous values must be integrated over sampled intervals. |
+| Storage | Optional `du -sb` directories | A directory size is not the platform hot-cache or object-storage meter. |
 
-The server ([lib/metering.ts](../lib/metering.ts)) aggregates the samples and
-multiplies by a rate card transcribed from the Billing page.
+The estimator uses decimal GB and applies the published minimums of 6.25% CPU
+utilization and 0.25 GB of memory for each covered second of runtime. Default
+rates are the public rates transcribed into `lib/metering.ts`; verify the live
+pricing page before using an estimate for a financial decision.
 
-### Why CPU is *exact* and memory/storage are ~99%
+## Gaps and resets
 
-`cpu.stat`'s `usage_usec` is a monotonic cumulative counter, so the delta between
-any two samples is the exact CPU consumed in that window — **no aliasing,
-regardless of sample rate.** Memory and storage are instantaneous, so they are
-trapezoid-integrated over time, which carries a small, sample-rate-dependent
-error.
+- A monotonic CPU counter delta is useful within one uninterrupted cgroup
+  epoch. It is not called exact.
+- If the CPU counter moves backward, the cgroup was recreated. The samples
+  cannot recover all usage before the first post-reset reading.
+- Memory and storage are integrated only across intervals no longer than five
+  minutes by default. Longer gaps lower coverage instead of inventing values.
+- `du` storage values are labeled as scenario proxies. Leave the storage env
+  vars unset when you do not want those proxy dollars included.
 
-### Honesty guarantees in the math
+## Ingest authentication
 
-- **Counter resets** (cold→warm cycles, checkpoint/restore recreate the cgroup)
-  are detected (counter goes backwards) and counted, not turned into negatives.
-- **Reader-down gaps**: CPU still counts across them (cumulative survives), but
-  memory/storage are **not** integrated across a gap longer than `maxGapMs`
-  (default 5 min) — we lower `coverage` instead of inventing usage.
-- `confidence` is derived from coverage + resets, never asserted.
+Set a separate app-level secret on the Workbench and on the sampler:
+
+```bash
+WORKBENCH_INGEST_TOKEN=<random-secret>
+```
+
+The reader sends it in `X-Workbench-Ingest-Token`. If the Workbench Sprite URL
+also requires edge authentication, set `WORKBENCH_EDGE_TOKEN`; that value is
+sent in `Authorization` and remains separate from app ingest auth.
+
+The client refuses redirects, non-JSON responses, and JSON without `ok: true`.
+This prevents a followed sign-in page from being mistaken for successful
+ingest.
 
 ## Running the reader
 
-```bash
-# Inside the Sprite (real counters):
-SPRITE_NAME=my-sprite node scripts/sprite-meter.mjs
+One sample is the default and does not start a persistent loop:
 
-# Local demo / CI (no cgroup needed):
-METER_SOURCE=synthetic METER_INTERVAL_MS=2000 \
-  SPRITE_NAME=my-sprite node scripts/sprite-meter.mjs
+```bash
+WORKBENCH_URL=https://your-workbench.example \
+WORKBENCH_INGEST_TOKEN=<secret> \
+SPRITE_NAME=my-sprite \
+node scripts/sprite-meter.mjs
 ```
 
-On `SIGINT`/`SIGTERM` it takes one final sample to capture the tail CPU.
+For a local synthetic sample:
 
-Env: `WORKBENCH_URL`, `SPRITE_NAME` (or `./.sprite`), `METER_INTERVAL_MS`,
-`METER_SOURCE`, `METER_HOT_DIR`, `METER_COLD_DIR`. Rate-card overrides live in
-[.env.example](../.env.example).
+```bash
+WORKBENCH_INGEST_TOKEN=<secret> \
+METER_SOURCE=synthetic \
+SPRITE_NAME=my-sprite \
+node scripts/sprite-meter.mjs
+```
 
-## Proving "99%": reconciliation
+Continuous mode is explicit:
 
-Reading the right counters makes 99% *possible*; it does not *prove* it. Three
-unknowns we can't see from outside can still shift dollars: the exact storage
-definition (dedup/compression), rounding rules, and any free allowance.
+```bash
+node scripts/sprite-meter.mjs --continuous
+```
 
-`reconcile(summary, invoice, targetPct)` in [lib/metering.ts](../lib/metering.ts)
-compares a computed summary against one real invoice, reporting per-component and
-total % error and whether it's within target. Run the meter for a billing
-period, reconcile once, and that single comparison both proves the number and
-calibrates the unknowns. Until then the UI labels the figure "not an official
-invoice."
+A continuously running meter is itself activity and can prevent a Sprite from
+becoming idle. Use it only when that lifecycle effect is intentional, such as
+measuring a workload that is already meant to stay awake.
+
+Optional env vars: `METER_INTERVAL_MS`, `METER_HOT_DIR`, `METER_COLD_DIR`,
+`WORKBENCH_EDGE_TOKEN`, and the rate-card overrides in `.env.example`.
+
+## Reconciliation
+
+`reconcile(summary, invoice, targetPct)` compares an estimate with a real
+invoice. It measures observed error for that period; it does not make future
+counter estimates invoice-grade.
 
 ## Files
 
-- [lib/metering.ts](../lib/metering.ts) — pure aggregation, cost, reconciliation
-- [lib/meter-store.ts](../lib/meter-store.ts) — JSONL sample persistence
-- [scripts/meter-core.mjs](../scripts/meter-core.mjs) — pure reader helpers + samplers
-- [scripts/sprite-meter.mjs](../scripts/sprite-meter.mjs) — the on-Sprite reader bin
-- `app/api/meter/samples` — ingest (same-origin, validated)
-- `app/api/meter/summary` — aggregated summary JSON
-- Per-Sprite "Metered usage" panel in `app/sprite/[name]/page.tsx`
-- Tests: `tests/metering.test.ts`, `tests/meter-core.test.ts`, `tests/meter-store.test.ts`
+- `lib/metering.ts`: aggregation, floors, rate-card math, reconciliation
+- `lib/meter-store.ts`: validated JSONL sample persistence
+- `scripts/meter-core.mjs`: cgroup readers and hardened ingest client
+- `scripts/sprite-meter.mjs`: one-shot or continuous reader
+- `app/api/meter/samples`: token-protected ingest
+- `app/api/meter/summary`: read-only summary JSON

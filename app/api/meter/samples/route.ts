@@ -1,6 +1,7 @@
 import {
+  assertIngestRequest,
   assertJsonRequest,
-  assertSameOriginRequest,
+  getRequestErrorStatus,
 } from "../../../../lib/request-security";
 import { recordMeterSample } from "../../../../lib/meter-store";
 
@@ -9,7 +10,7 @@ export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   try {
-    assertSameOriginRequest(request);
+    assertIngestRequest(request);
     assertJsonRequest(request);
 
     const body = (await request.json()) as unknown;
@@ -27,7 +28,7 @@ export async function POST(request: Request) {
         message:
           err instanceof Error ? err.message : "Could not record meter sample.",
       },
-      { status: 400 }
+      { status: getRequestErrorStatus(err) }
     );
   }
 }

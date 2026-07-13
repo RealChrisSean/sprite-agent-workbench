@@ -15,8 +15,16 @@ import {
   type SpriteAuthStatus,
   type SpriteAuthSource,
 } from "@/lib/sprite-auth";
+import {
+  ADMIN_SESSION_COOKIE,
+  getAdminToken,
+  verifyAdminSessionValue,
+} from "@/lib/admin-auth";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
+import { AdminAccessForm } from "./AdminAccessForm";
+import { CollectNowButton } from "./CollectNowButton";
 import { LocalTime } from "./LocalTime";
 import { RefreshButton } from "./RefreshButton";
 import { StatusPill } from "./StatusPill";
@@ -42,6 +50,13 @@ export default async function Home({
 
   const data = await getDashboardData(null, { loadCheckpoints: false });
   const statusGroups = data.ok ? getSpriteStatusGroups(data.sprites) : [];
+  const cookieStore = await cookies();
+  const adminAccess = {
+    configured: Boolean(getAdminToken()),
+    unlocked: verifyAdminSessionValue(
+      cookieStore.get(ADMIN_SESSION_COOKIE)?.value
+    ),
+  };
 
   return (
     <main className="min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,#d9f99d_0,#f8fafc_28rem,#e5e7eb_100%)] text-slate-950">
@@ -52,11 +67,12 @@ export default async function Home({
               Sprite Agent Workbench
             </h1>
             <p className="mt-0.5 text-xs text-slate-500">
-              Fleet state with evidence · checkpoints with context · passive
+              Fleet state with evidence · checkpoints with context · sampled
               cost exposure
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            <AdminAccessForm {...adminAccess} />
             <span className="font-mono text-sm text-slate-600">
               Refreshed <LocalTime iso={data.fetchedAt} />
             </span>
@@ -79,12 +95,16 @@ export default async function Home({
                 {data.error?.hint}
               </pre>
             </section>
-            <AuthSetupPanel auth={data.auth} />
+            <AuthSetupPanel auth={data.auth} canWrite={adminAccess.unlocked} />
           </>
         ) : (
           <>
             {data.source === "saved-token" ? (
-              <AuthSetupPanel auth={data.auth} compact />
+              <AuthSetupPanel
+                auth={data.auth}
+                canWrite={adminAccess.unlocked}
+                compact
+              />
             ) : null}
 
             <FleetStatusPanel
@@ -96,7 +116,10 @@ export default async function Home({
             />
 
             {data.costExposure ? (
-              <CostExposurePanel exposure={data.costExposure} />
+              <CostExposurePanel
+                exposure={data.costExposure}
+                canWrite={adminAccess.unlocked}
+              />
             ) : null}
 
             <SpriteRoster sprites={data.sprites} />
@@ -109,9 +132,11 @@ export default async function Home({
 
 function AuthSetupPanel({
   auth,
+  canWrite,
   compact = false,
 }: {
   auth: SpriteAuthStatus;
+  canWrite: boolean;
   compact?: boolean;
 }) {
   return (
@@ -176,7 +201,10 @@ function AuthSetupPanel({
 
       {!compact || auth.savedTokenConfigured ? (
         <div className="mt-4">
-          <TokenFallbackForm hasSavedToken={auth.savedTokenConfigured} />
+          <TokenFallbackForm
+            hasSavedToken={auth.savedTokenConfigured}
+            canWrite={canWrite}
+          />
         </div>
       ) : null}
     </section>
@@ -363,8 +391,10 @@ function SpriteRoster({ sprites }: { sprites: DashboardSprite[] }) {
 
 function CostExposurePanel({
   exposure,
+  canWrite,
 }: {
   exposure: CostExposureSummary;
+  canWrite: boolean;
 }) {
   const topSprites = exposure.sprites
     .filter(
@@ -389,8 +419,8 @@ function CostExposurePanel({
               Stop guessing what might be awake.
             </h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-              {exposure.disclaimer} Passive dashboard refreshes only; Sprites
-              are never woken to be measured.
+              {exposure.disclaimer} Page refresh only reads the control plane
+              and stored samples; it does not request Sprite app URLs.
             </p>
           </div>
           <div className="rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm text-slate-400">
@@ -404,22 +434,31 @@ function CostExposurePanel({
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           <DarkInfo label="Active now" value={String(exposure.activeNow)} />
           <DarkInfo
-            label="Observed active (24h)"
-            value={formatDuration(exposure.totalObservedActiveMs)}
+            label="Estimated Sprite-active (24h)"
+            value={
+              exposure.activeTimeStatus === "estimated"
+                ? formatDuration(exposure.totalObservedActiveMs)
+                : "Insufficient samples"
+            }
           />
+        </div>
+
+        <div className="mt-4">
+          <CollectNowButton canWrite={canWrite} />
         </div>
 
         {isQuiet ? (
           <p className="mt-4 text-sm leading-6 text-slate-400">
-            No risk signals and nothing active in the latest refresh
+            No risk signals and nothing active in the latest control-plane read
             ({exposure.observationCount} observations stored). One clean
-            snapshot is not a bill; keep refreshing over normal use.
+            snapshot is not a bill; schedule or run explicit collections over
+            normal use.
           </p>
         ) : null}
         {exposure.writeError ? (
           <p className="mt-4 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-3 text-sm leading-6 text-amber-100">
-            The dashboard is showing the current refresh, but the local
-            observation ledger could not be written.
+            The dashboard is showing current control-plane state, but the local
+            observation ledger is unavailable.
           </p>
         ) : null}
       </div>
@@ -432,7 +471,7 @@ function CostExposurePanel({
             </p>
             {exposure.riskFlags.length === 0 ? (
               <p className="mt-3 text-sm leading-6 text-slate-400">
-                No obvious exposure flags from the latest refresh.
+                No obvious exposure flags from the latest control-plane read.
               </p>
             ) : (
               <RiskFlagList flags={exposure.riskFlags} />
@@ -445,7 +484,8 @@ function CostExposurePanel({
                 Sprites to watch
               </p>
               <span className="text-xs text-slate-500">
-                {exposure.observationCount} observations stored
+                {exposure.collectionCount} collections · {exposure.observationCount}{" "}
+                Sprite samples
               </span>
             </div>
             {topSprites.length === 0 ? (
@@ -455,7 +495,11 @@ function CostExposurePanel({
             ) : (
               <ol className="mt-3 space-y-3">
                 {topSprites.map((sprite) => (
-                  <SpriteExposureItem key={sprite.spriteName} sprite={sprite} />
+                  <SpriteExposureItem
+                    key={sprite.spriteName}
+                    sprite={sprite}
+                    activeTimeStatus={exposure.activeTimeStatus}
+                  />
                 ))}
               </ol>
             )}
@@ -466,7 +510,13 @@ function CostExposurePanel({
   );
 }
 
-function SpriteExposureItem({ sprite }: { sprite: SpriteExposureSummary }) {
+function SpriteExposureItem({
+  sprite,
+  activeTimeStatus,
+}: {
+  sprite: SpriteExposureSummary;
+  activeTimeStatus: CostExposureSummary["activeTimeStatus"];
+}) {
   return (
     <li className="rounded-2xl border border-slate-800 bg-slate-950 p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -478,12 +528,14 @@ function SpriteExposureItem({ sprite }: { sprite: SpriteExposureSummary }) {
             <StatusPill status={sprite.currentStatus} />
           </div>
           <p className="mt-1 text-xs text-slate-500">
-            URL auth: {sprite.currentUrlAuth} · observations:{" "}
+            URL auth: {sprite.currentUrlAuth} · samples:{" "}
             {sprite.observationCount}
           </p>
         </div>
         <span className="font-mono text-sm font-bold text-lime-200">
-          {formatDuration(sprite.observedActiveMs)}
+          {activeTimeStatus === "estimated"
+            ? formatDuration(sprite.observedActiveMs)
+            : "Insufficient"}
         </span>
       </div>
 

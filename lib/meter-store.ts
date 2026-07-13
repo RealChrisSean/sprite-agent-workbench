@@ -90,6 +90,7 @@ export function validateMeterSampleInput(
     storageHotBytes: validateCounter(input.storageHotBytes, "storageHotBytes"),
     storageColdBytes: validateCounter(input.storageColdBytes, "storageColdBytes"),
     source,
+    storageMeasurement: validateStorageMeasurement(input.storageMeasurement),
   };
 }
 
@@ -129,6 +130,16 @@ function validateSource(value: unknown): string {
   return source;
 }
 
+function validateStorageMeasurement(
+  value: unknown
+): MeterSample["storageMeasurement"] {
+  if (value === undefined || value === null || value === "") return "none";
+  if (value !== "none" && value !== "directory-du") {
+    throw new Error("storageMeasurement must be none or directory-du.");
+  }
+  return value;
+}
+
 function isMeterSample(value: unknown): value is MeterSample {
   if (!isPlainObject(value)) return false;
   const candidate = value as Partial<MeterSample>;
@@ -139,7 +150,10 @@ function isMeterSample(value: unknown): value is MeterSample {
     typeof candidate.memCurrentBytes === "number" &&
     typeof candidate.storageHotBytes === "number" &&
     typeof candidate.storageColdBytes === "number" &&
-    typeof candidate.source === "string"
+    typeof candidate.source === "string" &&
+    (candidate.storageMeasurement === undefined ||
+      candidate.storageMeasurement === "none" ||
+      candidate.storageMeasurement === "directory-du")
   );
 }
 

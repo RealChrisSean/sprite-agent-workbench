@@ -3,7 +3,9 @@
 // run timeline fills itself instead of relying on the manual seed form.
 //
 // Environment:
-//   WORKBENCH_URL  Workbench base URL (default: http://localhost:3001)
+//   WORKBENCH_URL  Workbench base URL (default: http://localhost:1340)
+//   WORKBENCH_INGEST_TOKEN  Required app-level ingest secret
+//   WORKBENCH_EDGE_TOKEN    Optional Sprite URL bearer token
 //   SPRITE_NAME    Sprite the events belong to (required)
 //   RUN_ID         Optional. Reuse to group events into one run. The first
 //                  call prints the runId the Workbench assigned; export it.
@@ -53,7 +55,7 @@ function usage(message) {
       "  event <type> <label> [summary]",
       "",
       "Global flag: --checkpoint <id>  (link the event to a checkpoint)",
-      "Env: WORKBENCH_URL, SPRITE_NAME (required), RUN_ID (optional)",
+      "Env: WORKBENCH_URL, WORKBENCH_INGEST_TOKEN (required), SPRITE_NAME (required), RUN_ID (optional)",
     ].join("\n")
   );
   process.exit(2);

@@ -1,6 +1,7 @@
 import {
+  assertAdminRequest,
   assertJsonRequest,
-  assertSameOriginRequest,
+  getRequestErrorStatus,
 } from "../../../../lib/request-security";
 import {
   buildCheckpointCreatedEventInput,
@@ -19,7 +20,7 @@ export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   try {
-    assertSameOriginRequest(request);
+    assertAdminRequest(request);
     assertJsonRequest(request);
 
     const body = (await request.json()) as {
@@ -112,7 +113,7 @@ export async function POST(request: Request) {
         message:
           err instanceof Error ? err.message : "Could not restore checkpoint.",
       },
-      { status: 400 }
+      { status: getRequestErrorStatus(err) }
     );
   }
 }

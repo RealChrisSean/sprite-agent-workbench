@@ -10,10 +10,18 @@ import {
 import {
   getDashboardData,
   getSpriteDashboardUrl,
+  getSpriteRuntimeEvidence,
+  isRestorableCheckpoint,
   type DashboardSprite,
   type SleepInference,
   type SpriteCheckpoint,
+  type SpriteRuntimeEvidence,
 } from "@/lib/sprites";
+import {
+  ADMIN_SESSION_COOKIE,
+  getAdminToken,
+  verifyAdminSessionValue,
+} from "@/lib/admin-auth";
 import { readMeterSamples } from "@/lib/meter-store";
 import {
   getRateCardFromEnv,
@@ -21,8 +29,11 @@ import {
   type MeterSummary,
 } from "@/lib/metering";
 import Link from "next/link";
+import { cookies } from "next/headers";
+import { AdminAccessForm } from "../../AdminAccessForm";
 import { AgentRunEventForm } from "../../AgentRunEventForm";
 import { CheckpointCreateForm } from "../../CheckpointCreateForm";
+import { HealthProbeForm } from "../../HealthProbeForm";
 import { LocalTime } from "../../LocalTime";
 import { RefreshButton } from "../../RefreshButton";
 import { RestoreCheckpointForm } from "../../RestoreCheckpointForm";
@@ -51,12 +62,23 @@ export default async function SpriteDetailPage({
   const sprite = data.ok
     ? (data.sprites.find((item) => item.name === spriteName) ?? null)
     : null;
-  const timeline = sprite ? await getAgentRunTimeline(sprite.name) : null;
+  const [timeline, meterSamples, runtimeEvidence] = sprite
+    ? await Promise.all([
+        getAgentRunTimeline(sprite.name),
+        readMeterSamples(sprite.name),
+        getSpriteRuntimeEvidence(sprite.name),
+      ])
+    : [null, [], null];
   const meterSummary = sprite
-    ? summarizeMeterSamples(await readMeterSamples(sprite.name), {
-        rateCard: getRateCardFromEnv(),
-      })
+    ? summarizeMeterSamples(meterSamples, { rateCard: getRateCardFromEnv() })
     : null;
+  const cookieStore = await cookies();
+  const adminAccess = {
+    configured: Boolean(getAdminToken()),
+    unlocked: verifyAdminSessionValue(
+      cookieStore.get(ADMIN_SESSION_COOKIE)?.value
+    ),
+  };
 
   return (
     <main className="min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,#d9f99d_0,#f8fafc_28rem,#e5e7eb_100%)] text-slate-950">
@@ -86,6 +108,7 @@ export default async function SpriteDetailPage({
             {sprite ? (
               <div className="flex flex-col items-start gap-3 md:items-end">
                 <div className="flex flex-wrap gap-2">
+                  <AdminAccessForm {...adminAccess} />
                   <a
                     className="rounded-full border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 transition hover:border-slate-950 hover:text-slate-950"
                     href={getSpriteDashboardUrl(sprite)}
@@ -168,14 +191,31 @@ export default async function SpriteDetailPage({
           </section>
         ) : (
           <>
-            <SleepBox sleep={sprite.sleep} health={sprite.health} />
+            <SleepBox
+              spriteName={sprite.name}
+              sleep={sprite.sleep}
+              health={sprite.health}
+              canWrite={adminAccess.unlocked}
+            />
+
+            {runtimeEvidence ? (
+              <RuntimeEvidencePanel evidence={runtimeEvidence} />
+            ) : null}
 
             {meterSummary ? <MeterPanel summary={meterSummary} /> : null}
 
-            <CheckpointsPanel sprite={sprite} timeline={timeline} />
+            <CheckpointsPanel
+              sprite={sprite}
+              timeline={timeline}
+              canWrite={adminAccess.unlocked}
+            />
 
             {timeline ? (
-              <AgentRunTimelinePanel sprite={sprite} timeline={timeline} />
+              <AgentRunTimelinePanel
+                sprite={sprite}
+                timeline={timeline}
+                canWrite={adminAccess.unlocked}
+              />
             ) : null}
           </>
         )}
@@ -187,10 +227,15 @@ export default async function SpriteDetailPage({
 function CheckpointsPanel({
   sprite,
   timeline,
+  canWrite,
 }: {
   sprite: DashboardSprite;
   timeline: AgentRunTimeline | null;
+  canWrite: boolean;
 }) {
+  const restorableCheckpoints = sprite.checkpoints.filter(
+    isRestorableCheckpoint
+  );
   return (
     <section className="overflow-hidden rounded-[2rem] border border-white/70 bg-slate-950 text-slate-100 shadow-[0_24px_90px_rgba(15,23,42,0.20)]">
       <div className="border-b border-slate-800 p-5">
@@ -204,7 +249,7 @@ function CheckpointsPanel({
             </h2>
           </div>
           <div className="flex flex-wrap items-center gap-3 text-sm text-slate-400">
-            <span>{sprite.checkpoints.length} checkpoints</span>
+            <span>{restorableCheckpoints.length} restore points</span>
             <span>
               Last running <LocalTime iso={sprite.last_running_at} />
             </span>
@@ -214,23 +259,20 @@ function CheckpointsPanel({
 
       <div className="p-5">
         <div className="mb-4">
-          <CheckpointCreateForm
-            spriteName={sprite.name}
-            appHealth={sprite.health.label}
-          />
+          <CheckpointCreateForm spriteName={sprite.name} canWrite={canWrite} />
         </div>
 
         {sprite.checkpointError ? (
           <p className="rounded-2xl bg-red-950/70 p-4 text-sm text-red-100">
             {sprite.checkpointError}
           </p>
-        ) : sprite.checkpoints.length === 0 ? (
+        ) : restorableCheckpoints.length === 0 ? (
           <p className="rounded-2xl border border-slate-800 bg-slate-900 p-4 text-sm text-slate-300">
             No checkpoints found for this Sprite yet.
           </p>
         ) : (
           <ol className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
-            {sprite.checkpoints.map((checkpoint) => {
+            {restorableCheckpoints.map((checkpoint) => {
               const overwrite = timeline
                 ? getEventsSinceCheckpoint(
                     timeline.events,
@@ -252,6 +294,7 @@ function CheckpointsPanel({
                   }
                   overwriteEventCount={overwrite.eventCount}
                   overwriteFileCount={overwrite.fileCount}
+                  canWrite={canWrite}
                 />
               );
             })}
@@ -268,12 +311,14 @@ function CheckpointListItem({
   contextEvents,
   overwriteEventCount,
   overwriteFileCount,
+  canWrite,
 }: {
   spriteName: string;
   checkpoint: SpriteCheckpoint;
   contextEvents: AgentRunEvent[];
   overwriteEventCount: number;
   overwriteFileCount: number;
+  canWrite: boolean;
 }) {
   return (
     <li className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
@@ -317,9 +362,17 @@ function CheckpointListItem({
                 ) : null}
                 {typeof event.metadata.app_health === "string" ? (
                   <p className="mt-1 text-xs text-slate-500">
-                    App health at checkpoint:{" "}
+                    Health label supplied with event:{" "}
                     <span className="font-semibold text-slate-300">
                       {event.metadata.app_health}
+                    </span>
+                  </p>
+                ) : null}
+                {typeof event.metadata.health_when_observed === "string" ? (
+                  <p className="mt-1 text-xs text-slate-500">
+                    Health when discovered:{" "}
+                    <span className="font-semibold text-slate-300">
+                      {event.metadata.health_when_observed}
                     </span>
                   </p>
                 ) : null}
@@ -336,6 +389,7 @@ function CheckpointListItem({
         checkpointId={checkpoint.id}
         overwriteEventCount={overwriteEventCount}
         overwriteFileCount={overwriteFileCount}
+        canWrite={canWrite}
       />
     </li>
   );
@@ -344,9 +398,11 @@ function CheckpointListItem({
 function AgentRunTimelinePanel({
   sprite,
   timeline,
+  canWrite,
 }: {
   sprite: DashboardSprite;
   timeline: AgentRunTimeline;
+  canWrite: boolean;
 }) {
   const latestRun = timeline.runs[0] ?? null;
 
@@ -412,7 +468,10 @@ function AgentRunTimelinePanel({
             </span>
           </summary>
           <div className="px-4 pb-4">
-            <AgentRunEventForm spriteName={sprite.name} />
+            <AgentRunEventForm
+              spriteName={sprite.name}
+              canWrite={canWrite}
+            />
           </div>
         </details>
       </div>
@@ -620,7 +679,7 @@ function MeterPanel({ summary }: { summary: MeterSummary }) {
     high: { label: "High confidence", tone: "border-emerald-300 bg-emerald-50 text-emerald-900" },
     medium: { label: "Medium confidence", tone: "border-amber-300 bg-amber-50 text-amber-900" },
     low: { label: "Low confidence", tone: "border-red-300 bg-red-50 text-red-900" },
-    "exact-cpu-only": { label: "CPU exact · memory/storage not yet covered", tone: "border-slate-300 bg-slate-100 text-slate-700" },
+    "counter-only": { label: "Counter data only · interval coverage missing", tone: "border-slate-300 bg-slate-100 text-slate-700" },
   }[summary.confidence];
 
   const empty = summary.sampleCount < 2;
@@ -631,16 +690,15 @@ function MeterPanel({ summary }: { summary: MeterSummary }) {
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500">
-              Metered usage · accurate tier
+              Local usage estimate
             </p>
             <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-950">
-              Near-exact cost from the billed counters
+              Counter-based estimate, not invoice data
             </h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-              Read from cgroup <code className="font-mono">cpu.stat</code>,{" "}
-              <code className="font-mono">memory.current</code>, and disk inside the
-              Sprite — the same quantities the platform bills. CPU is exact;
-              memory/storage are integrated from samples.
+              CPU and memory start with local cgroup counters. The estimate
+              applies the published 6.25% CPU and 0.25 GB memory floors;
+              counter resets and missing intervals remain explicit uncertainty.
             </p>
           </div>
           <span className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-bold ${confidence.tone}`}>
@@ -654,11 +712,12 @@ function MeterPanel({ summary }: { summary: MeterSummary }) {
           <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
             No meter samples yet. Run the on-Sprite reader to start measuring:
             <pre className="mt-3 overflow-x-auto rounded-xl bg-slate-950 p-3 text-xs text-lime-200">
-{`# inside the Sprite
-SPRITE_NAME=${summary.spriteName ?? "<sprite>"} node scripts/sprite-meter.mjs
+{`# inside the Sprite (one sample; no loop)
+WORKBENCH_URL=<url> WORKBENCH_INGEST_TOKEN=<secret> \\
+  SPRITE_NAME=${summary.spriteName ?? "<sprite>"} node scripts/sprite-meter.mjs
 
 # local demo (no cgroup needed)
-METER_SOURCE=synthetic METER_INTERVAL_MS=2000 \\
+METER_SOURCE=synthetic WORKBENCH_INGEST_TOKEN=<secret> \\
   SPRITE_NAME=${summary.spriteName ?? "<sprite>"} node scripts/sprite-meter.mjs`}
             </pre>
           </div>
@@ -667,7 +726,7 @@ METER_SOURCE=synthetic METER_INTERVAL_MS=2000 \\
         <div className="flex flex-col gap-5 p-5">
           <div className="rounded-3xl border border-slate-200 bg-slate-950 p-5 text-slate-100">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-lime-300">
-              Observed cost so far
+              Counter-based estimate so far
             </p>
             <p className="mt-2 text-4xl font-black tracking-tight text-white">
               {usd(summary.cost.total)}
@@ -680,10 +739,10 @@ METER_SOURCE=synthetic METER_INTERVAL_MS=2000 \\
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <MeterStat label="CPU" usage={`${summary.cpuHours.toFixed(3)} CPU-hr`} cost={usd(summary.cost.cpu)} exact />
+            <MeterStat label="CPU estimate" usage={`${summary.cpuHours.toFixed(3)} CPU-hr billed · ${summary.rawCpuHours.toFixed(3)} raw`} cost={usd(summary.cost.cpu)} />
             <MeterStat label="Memory" usage={`${summary.memoryGbHours.toFixed(3)} GB-hr`} cost={usd(summary.cost.memory)} />
-            <MeterStat label="Hot storage" usage={`${summary.hotStorageGbHours.toFixed(3)} GB-hr`} cost={usd(summary.cost.hotStorage)} />
-            <MeterStat label="Cold storage" usage={`${summary.coldStorageGbHours.toFixed(3)} GB-hr`} cost={usd(summary.cost.coldStorage)} />
+            <MeterStat label="Hot storage proxy" usage={`${summary.hotStorageGbHours.toFixed(3)} GB-hr`} cost={usd(summary.cost.hotStorage)} />
+            <MeterStat label="Cold storage proxy" usage={`${summary.coldStorageGbHours.toFixed(3)} GB-hr`} cost={usd(summary.cost.coldStorage)} />
           </div>
 
           {summary.notes.length > 0 ? (
@@ -698,10 +757,11 @@ METER_SOURCE=synthetic METER_INTERVAL_MS=2000 \\
           ) : null}
 
           <p className="text-xs leading-5 text-slate-500">
-            Estimate from the billed counters at rates{" "}
+            Local estimate at published rates{" "}
             ${summary.rateCard.cpuPerHour}/CPU-hr, ${summary.rateCard.memoryGbPerHour}/GB-hr.
-            Not an official invoice — reconcile once against a real bill to prove
-            accuracy and calibrate the storage definition.
+            Storage from <code className="font-mono">du</code>, when enabled, is
+            only a directory-size scenario proxy and does not reproduce the
+            platform hot-cache or object-storage meters.
           </p>
         </div>
       )}
@@ -713,12 +773,10 @@ function MeterStat({
   label,
   usage,
   cost,
-  exact = false,
 }: {
   label: string;
   usage: string;
   cost: string;
-  exact?: boolean;
 }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -726,11 +784,6 @@ function MeterStat({
         <p className="text-[0.68rem] font-bold uppercase tracking-[0.08em] text-slate-500">
           {label}
         </p>
-        {exact ? (
-          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[0.6rem] font-bold uppercase tracking-wide text-emerald-800">
-            exact
-          </span>
-        ) : null}
       </div>
       <p className="mt-2 text-lg font-black text-slate-950">{cost}</p>
       <p className="mt-0.5 text-xs text-slate-500">{usage}</p>
@@ -738,12 +791,123 @@ function MeterStat({
   );
 }
 
+function RuntimeEvidencePanel({
+  evidence,
+}: {
+  evidence: SpriteRuntimeEvidence;
+}) {
+  const tone =
+    evidence.assessment.tone === "warn"
+      ? "border-amber-300 bg-amber-50 text-amber-950"
+      : evidence.assessment.tone === "good"
+        ? "border-emerald-300 bg-emerald-50 text-emerald-950"
+        : "border-slate-300 bg-white text-slate-950";
+
+  return (
+    <section className={`rounded-[2rem] border p-5 ${tone}`}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.18em] opacity-65">
+            Awake evidence
+          </p>
+          <h2 className="mt-2 text-xl font-bold">{evidence.assessment.label}</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 opacity-80">
+            {evidence.assessment.detail}
+          </p>
+        </div>
+        <p className="text-xs opacity-65">
+          Control plane read <LocalTime iso={evidence.fetchedAt} />
+        </p>
+      </div>
+
+      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        <div className="rounded-md border border-current/15 bg-white/60 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-bold">Services</h3>
+            <span className="text-xs opacity-65">
+              {evidence.runningServiceCount} running
+            </span>
+          </div>
+          {evidence.services.length === 0 ? (
+            <p className="mt-3 text-sm opacity-65">No Services returned.</p>
+          ) : (
+            <ul className="mt-3 divide-y divide-current/10">
+              {evidence.services.map((service) => (
+                <li key={service.name} className="py-3 first:pt-0 last:pb-0">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-mono text-sm font-bold">
+                      {service.name}
+                    </span>
+                    <span className="text-xs font-bold uppercase opacity-65">
+                      {service.state}
+                    </span>
+                  </div>
+                  <p className="mt-1 break-all font-mono text-xs opacity-75">
+                    {service.command || "Command not returned"}
+                  </p>
+                  <p className="mt-1 text-xs opacity-65">
+                    PID {service.pid ?? "-"} · HTTP {service.httpPort ?? "-"} ·
+                    started <LocalTime iso={service.startedAt} />
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="rounded-md border border-current/15 bg-white/60 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-bold">Exec sessions</h3>
+            <span className="text-xs opacity-65">
+              {evidence.activeSessionCount} active
+            </span>
+          </div>
+          {evidence.sessions.length === 0 ? (
+            <p className="mt-3 text-sm opacity-65">No exec sessions returned.</p>
+          ) : (
+            <ul className="mt-3 divide-y divide-current/10">
+              {evidence.sessions.map((session) => (
+                <li key={session.id} className="py-3 first:pt-0 last:pb-0">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-mono text-sm font-bold">
+                      {session.command || session.id}
+                    </span>
+                    <span className="text-xs font-bold uppercase opacity-65">
+                      {session.active ? "active" : "inactive"}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs opacity-65">
+                    Created <LocalTime iso={session.createdAt} /> · last activity{" "}
+                    <LocalTime iso={session.lastActivityAt} />
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+
+      {evidence.errors.length > 0 ? (
+        <ul className="mt-4 space-y-1 text-xs text-red-800">
+          {evidence.errors.map((error) => (
+            <li key={error}>{error}</li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  );
+}
+
 function SleepBox({
+  spriteName,
   sleep,
   health,
+  canWrite,
 }: {
+  spriteName: string;
   sleep: SleepInference;
   health: DashboardSprite["health"];
+  canWrite: boolean;
 }) {
   const tone =
     sleep.tone === "good"
@@ -769,7 +933,19 @@ function SleepBox({
       <p className="mt-4 border-t border-current/15 pt-3 text-sm leading-6 opacity-80">
         <span className="font-bold">Health: {health.label}.</span>{" "}
         {health.detail}
+        {health.observedAt ? (
+          <span>
+            {" "}Recorded <LocalTime iso={health.observedAt} /> for{" "}
+            <span className="font-mono">{health.path}</span>.
+          </span>
+        ) : null}
       </p>
+      <HealthProbeForm
+        spriteName={spriteName}
+        canWrite={canWrite}
+        defaultPath={health.path || "/"}
+        defaultExpectedStatuses={health.expectedStatuses || "200-399"}
+      />
     </section>
   );
 }

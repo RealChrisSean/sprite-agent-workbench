@@ -6,6 +6,7 @@ import { validateSpriteNameInput } from "./sprites";
 export const AGENT_RUN_EVENT_TYPES = [
   "run_started",
   "checkpoint_created",
+  "checkpoint_observed",
   "restore_performed",
   "command_started",
   "command_finished",
@@ -32,6 +33,7 @@ export type AgentRunFileStatus = "A" | "M" | "D";
 export const AGENT_RUN_EVENT_TYPE_LABELS: Record<AgentRunEventType, string> = {
   run_started: "Run started",
   checkpoint_created: "Checkpoint created",
+  checkpoint_observed: "Checkpoint discovered",
   restore_performed: "Restore performed",
   command_started: "Command started",
   command_finished: "Command finished",
@@ -168,6 +170,7 @@ export async function readAgentRunEventsForSprite(
       }
     })
     .filter((event) => event.spriteName === spriteName)
+    .filter((event) => !isLegacyObservedCheckpointEvent(event))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, Math.max(1, limit));
 }
@@ -286,6 +289,7 @@ export function getEventsSinceCheckpoint(
 export function getLinkedCheckpointIds(events: AgentRunEvent[]): Set<string> {
   const ids = new Set<string>();
   for (const event of events) {
+    if (isLegacyObservedCheckpointEvent(event)) continue;
     const id = event.metadata.checkpoint_id;
     if (typeof id === "string" && id) ids.add(id);
   }
@@ -298,21 +302,18 @@ export function buildCheckpointCreatedEventInput({
   comment,
   message,
   appHealth,
-  source = "workbench",
 }: {
   spriteName: string;
   checkpointId: string | null;
   comment?: string | null;
   message?: string | null;
   appHealth?: string | null;
-  source?: string;
 }): AgentRunEventInput {
   const label = checkpointId
     ? `Checkpoint ${checkpointId} created`
     : "Checkpoint created";
   const normalizedComment = comment?.trim();
   const normalizedHealth = appHealth?.trim();
-  const observed = source === "observed";
 
   return {
     spriteName,
@@ -320,17 +321,62 @@ export function buildCheckpointCreatedEventInput({
     label,
     summary: normalizedComment
       ? "Created from Sprite Agent Workbench with a checkpoint comment."
-      : observed
-        ? "Observed by Workbench — created outside the dashboard, no recorded task context."
-        : message || "Created from Sprite Agent Workbench.",
+      : message || "Created from Sprite Agent Workbench.",
     status: "success",
     metadata: {
       checkpoint_id: checkpointId || "unknown",
-      source,
+      source: "workbench",
       has_comment: Boolean(normalizedComment),
       ...(normalizedHealth ? { app_health: normalizedHealth } : {}),
     },
   };
+}
+
+export function buildCheckpointObservedEventInput({
+  spriteName,
+  checkpointId,
+  checkpointCreatedAt,
+  observedAt,
+  comment,
+  healthWhenObserved,
+}: {
+  spriteName: string;
+  checkpointId: string;
+  checkpointCreatedAt: string;
+  observedAt: string;
+  comment?: string | null;
+  healthWhenObserved?: string | null;
+}): AgentRunEventInput {
+  const normalizedComment = comment?.trim();
+  const normalizedHealth = healthWhenObserved?.trim();
+
+  return {
+    spriteName,
+    type: "checkpoint_observed",
+    label: `Checkpoint ${checkpointId} discovered`,
+    summary: normalizedComment
+      ? "Discovered by Workbench after creation outside the dashboard; the platform checkpoint already had a comment."
+      : "Discovered by Workbench after creation outside the dashboard; no task context was recorded at creation time.",
+    status: "info",
+    metadata: {
+      checkpoint_id: checkpointId,
+      source: "observed",
+      checkpoint_created_at: checkpointCreatedAt,
+      observed_at: observedAt,
+      has_comment: Boolean(normalizedComment),
+      ...(normalizedHealth
+        ? { health_when_observed: normalizedHealth }
+        : {}),
+    },
+  };
+}
+
+function isLegacyObservedCheckpointEvent(event: AgentRunEvent): boolean {
+  return (
+    event.type === "checkpoint_created" &&
+    event.metadata.source === "observed" &&
+    typeof event.metadata.checkpoint_created_at !== "string"
+  );
 }
 
 export function buildVerificationEventInput({
