@@ -1092,13 +1092,13 @@ export function getSpriteStatusGroups<T extends Pick<SpriteSummary, "status">>(
     {
       key: "warm",
       label: "Warm",
-      detail: "Recently touched",
+      detail: "Suspended, fast resume",
       sprites: warm,
     },
     {
       key: "cold",
       label: "Cold",
-      detail: "Idle or asleep",
+      detail: "Fully stopped",
       sprites: cold,
     },
     {
@@ -1185,10 +1185,11 @@ function inferSleep(
 
   if (sprite.status === "warm") {
     return {
-      label: "Warm / recently touched",
+      label: "Warm / suspended, fast resume",
       tone: "good",
       evidence: [
-        "Sprites reports this environment is warm. It may have recently handled API, URL, or session activity.",
+        "Sprites reports this environment is warm: activity stopped, the VM is suspended with memory frozen in place, and compute billing is stopped.",
+        "The next request resumes it in about 100-500ms, with processes picking up exactly where they were.",
         ...evidence,
       ],
     };
@@ -1196,11 +1197,11 @@ function inferSleep(
 
   if (sprite.status === "cold") {
     return {
-      label: "Likely idle sleep",
+      label: "Fully stopped",
       tone: "warn",
       evidence: [
-        "Sprites reports this environment is cold.",
-        "Most likely cause: no active shell/session and no recent app HTTP traffic.",
+        "Sprites reports this environment is cold: it idled past the warm stage, so the VM is fully stopped and in-memory state was dropped.",
+        "Nothing woke it in time - no session, command, or URL traffic during the warm window. The next wake takes about 1-2s and starts processes fresh.",
         ...evidence,
       ],
     };

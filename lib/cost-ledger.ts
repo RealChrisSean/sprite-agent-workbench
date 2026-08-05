@@ -410,7 +410,8 @@ function buildFleetRiskFlags({
     flags.push({
       severity: "info",
       label: `${warmNow} warm now`,
-      detail: "Warm Sprites were recently touched or are ready to resume.",
+      detail:
+        "Warm Sprites are suspended with billing stopped; the next request resumes them in about 100-500ms.",
     });
   }
   if (publicUrlCount > 0) {
@@ -467,7 +468,8 @@ function buildSpriteRiskFlags({
     flags.push({
       severity: "info",
       label: "Warm now",
-      detail: "This Sprite was recently touched or is ready to resume.",
+      detail:
+        "This Sprite is suspended with billing stopped and resumes on the next request.",
     });
   }
   if (current.urlAuth === "public") {
