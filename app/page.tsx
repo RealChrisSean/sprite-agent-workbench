@@ -66,21 +66,21 @@ export default async function Home({
   };
 
   return (
-    <main className="min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,#d9f99d_0,#f8fafc_28rem,#e5e7eb_100%)] text-slate-950">
+    <main className="min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,#d9f99d_0,#fdf8ee_28rem,#f0e6d8_100%)] text-stone-950">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-5 py-6 sm:px-8 lg:px-10">
-        <header className="flex flex-wrap items-center justify-between gap-4 rounded-[2rem] border border-white/70 bg-white/70 px-6 py-4 shadow-[0_24px_90px_rgba(15,23,42,0.10)] backdrop-blur">
+        <header className="flex flex-wrap items-center justify-between gap-4 rounded-[2rem] border border-white/70 bg-white/70 px-6 py-4 shadow-[0_24px_90px_rgba(87,63,28,0.10)] backdrop-blur">
           <div>
-            <h1 className="text-lg font-black tracking-tight text-slate-950">
+            <h1 className="text-lg font-black tracking-tight text-stone-950">
               Sprite Agent Workbench
             </h1>
-            <p className="mt-0.5 text-xs text-slate-500">
+            <p className="mt-0.5 text-xs text-stone-500">
               Fleet state with evidence · checkpoints with context · sampled
               cost exposure
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <AdminAccessForm {...adminAccess} />
-            <span className="font-mono text-sm text-slate-600">
+            <span className="font-mono text-sm text-stone-600">
               Refreshed <LocalTime iso={data.fetchedAt} />
             </span>
             <RefreshButton />
@@ -133,7 +133,7 @@ export default async function Home({
                   canWrite={adminAccess.unlocked}
                 />
               ) : (
-                <section className="rounded-[2rem] border border-white/70 bg-white/75 p-6 text-sm leading-6 text-slate-600 shadow-[0_20px_80px_rgba(15,23,42,0.08)] backdrop-blur">
+                <section className="rounded-[2rem] border border-white/70 bg-white/75 p-6 text-sm leading-6 text-stone-600 shadow-[0_20px_80px_rgba(87,63,28,0.08)] backdrop-blur">
                   Cost observations are unavailable right now.
                 </section>
               )
@@ -151,7 +151,7 @@ function HomeTabs({ view }: { view: HomeView }) {
   return (
     <nav
       aria-label="Dashboard sections"
-      className="flex w-fit max-w-full flex-wrap gap-1 rounded-full border border-white/70 bg-white/70 p-1.5 shadow-[0_24px_90px_rgba(15,23,42,0.10)] backdrop-blur"
+      className="flex w-fit max-w-full flex-wrap gap-1 rounded-full border border-white/70 bg-white/70 p-1.5 shadow-[0_24px_90px_rgba(87,63,28,0.10)] backdrop-blur"
     >
       <HomeTab href="/" active={view === "fleet"}>
         Fleet state
@@ -180,8 +180,8 @@ function HomeTab({
       aria-current={active ? "page" : undefined}
       className={`rounded-full px-5 py-2 text-sm font-bold transition ${
         active
-          ? "bg-slate-950 text-white shadow-sm"
-          : "text-slate-600 hover:bg-white/80 hover:text-slate-950"
+          ? "bg-stone-950 text-white shadow-sm"
+          : "text-stone-600 hover:bg-white/80 hover:text-stone-950"
       }`}
       href={href}
     >
@@ -200,23 +200,23 @@ function AuthSetupPanel({
   compact?: boolean;
 }) {
   return (
-    <section className="rounded-[2rem] border border-white/70 bg-white/85 p-6 shadow-[0_20px_80px_rgba(15,23,42,0.08)] backdrop-blur">
+    <section className="rounded-[2rem] border border-white/70 bg-white/85 p-6 shadow-[0_20px_80px_rgba(87,63,28,0.08)] backdrop-blur">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-stone-500">
             Secure setup
           </p>
-          <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-950">
+          <h2 className="mt-2 text-xl font-bold tracking-tight text-stone-950">
             Do not make the token part of the app.
           </h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-600">
             The best setup is a Sprites Connector. It keeps the raw token in the
             Sprites organization vault and lets this Sprite call the gateway
             without holding the credential itself.
           </p>
         </div>
         <div className="flex flex-col items-start gap-2 md:items-end">
-          <span className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700">
+          <span className="rounded-full border border-stone-200 bg-stone-50 px-4 py-2 text-sm font-semibold text-stone-700">
             Active: {getAuthSourceLabel(auth.source)}
           </span>
           <TestConnectionButton />
@@ -241,19 +241,19 @@ function AuthSetupPanel({
           </pre>
         </div>
 
-        <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5 text-slate-950">
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
+        <div className="rounded-3xl border border-stone-200 bg-stone-50 p-5 text-stone-950">
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-stone-500">
             Also OK
           </p>
           <h3 className="mt-2 text-lg font-bold">
             Use a server-only environment token.
           </h3>
-          <p className="mt-3 text-sm leading-6 text-slate-600">
+          <p className="mt-3 text-sm leading-6 text-stone-600">
             This is simpler, but the Sprite process holds a long-lived token.
             Use it only as a server env var. Never use `NEXT_PUBLIC_`, never
             put it in frontend code, and avoid checkpointing secret files.
           </p>
-          <pre className="mt-4 overflow-x-auto rounded-2xl bg-slate-950 p-4 text-xs text-slate-50">
+          <pre className="mt-4 overflow-x-auto rounded-2xl bg-stone-950 p-4 text-xs text-stone-50">
             SPRITES_API_TOKEN=your-server-only-token
           </pre>
         </div>
@@ -290,23 +290,23 @@ function FleetStatusPanel({
   warmLimit: number | null;
 }) {
   return (
-    <section className="rounded-[2rem] border border-white/70 bg-white/75 p-5 shadow-[0_20px_80px_rgba(15,23,42,0.08)] backdrop-blur">
+    <section className="rounded-[2rem] border border-white/70 bg-white/75 p-5 shadow-[0_20px_80px_rgba(87,63,28,0.08)] backdrop-blur">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-stone-500">
             Fleet state
           </p>
-          <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-950">
+          <h2 className="mt-2 text-xl font-bold tracking-tight text-stone-950">
             Which Sprites are awake?
           </h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-600">
             Open a chip to see the evidence behind each running, warm, or cold
             call.
           </p>
         </div>
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+        <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
           <p>
-            <span className="font-bold text-slate-950">
+            <span className="font-bold text-stone-950">
               {orgName || "Unknown org"}
             </span>{" "}
             · via {getAuthSourceLabel(source)}
@@ -341,7 +341,7 @@ function FleetStatusPanel({
               <div className="flex flex-wrap gap-2">
                 {group.sprites.map((sprite) => (
                   <details key={sprite.id} className="max-w-full open:w-full">
-                    <summary className="inline-flex max-w-full cursor-pointer list-none items-center gap-2 rounded-full border border-white/70 bg-white/75 px-3 py-1.5 text-xs font-semibold shadow-sm transition hover:border-slate-400 [&::-webkit-details-marker]:hidden">
+                    <summary className="inline-flex max-w-full cursor-pointer list-none items-center gap-2 rounded-full border border-white/70 bg-white/75 px-3 py-1.5 text-xs font-semibold shadow-sm transition hover:border-stone-400 [&::-webkit-details-marker]:hidden">
                       <span
                         className={`h-2.5 w-2.5 shrink-0 rounded-full ${getStatusDotClasses(sprite.status)}`}
                         aria-hidden="true"
@@ -359,7 +359,7 @@ function FleetStatusPanel({
                         ))}
                       </ul>
                       <Link
-                        className="mt-2 inline-flex font-bold text-slate-950 underline-offset-2 hover:underline"
+                        className="mt-2 inline-flex font-bold text-stone-950 underline-offset-2 hover:underline"
                         href={`/sprite/${encodeURIComponent(sprite.name)}`}
                       >
                         Inspect {sprite.name}
@@ -378,22 +378,22 @@ function FleetStatusPanel({
 
 function SpriteRoster({ sprites }: { sprites: DashboardSprite[] }) {
   return (
-    <section className="rounded-[2rem] border border-white/70 bg-white/75 p-5 shadow-[0_20px_80px_rgba(15,23,42,0.08)] backdrop-blur">
+    <section className="rounded-[2rem] border border-white/70 bg-white/75 p-5 shadow-[0_20px_80px_rgba(87,63,28,0.08)] backdrop-blur">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-xl font-bold tracking-tight text-slate-950">
+        <h2 className="text-xl font-bold tracking-tight text-stone-950">
           Sprites
         </h2>
-        <p className="text-sm text-slate-600">
-          <span className="font-bold text-slate-950">{sprites.length}</span>{" "}
+        <p className="text-sm text-stone-600">
+          <span className="font-bold text-stone-950">{sprites.length}</span>{" "}
           visible
         </p>
       </div>
 
-      <ul className="mt-4 divide-y divide-slate-200 overflow-hidden rounded-3xl border border-slate-200 bg-white">
+      <ul className="mt-4 divide-y divide-stone-200 overflow-hidden rounded-3xl border border-stone-200 bg-white">
         {sprites.map((sprite) => (
           <li
             key={sprite.id}
-            className="flex flex-wrap items-center gap-3 p-4 transition hover:bg-slate-50"
+            className="flex flex-wrap items-center gap-3 p-4 transition hover:bg-stone-50"
           >
             <span
               className={`h-2.5 w-2.5 shrink-0 rounded-full ${getStatusDotClasses(sprite.status)}`}
@@ -402,14 +402,14 @@ function SpriteRoster({ sprites }: { sprites: DashboardSprite[] }) {
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <Link
-                  className="text-base font-semibold text-slate-950 underline-offset-2 hover:underline"
+                  className="text-base font-semibold text-stone-950 underline-offset-2 hover:underline"
                   href={`/sprite/${encodeURIComponent(sprite.name)}`}
                 >
                   {sprite.name}
                 </Link>
                 <StatusPill status={sprite.status} />
               </div>
-              <p className="mt-0.5 truncate text-xs text-slate-500">
+              <p className="mt-0.5 truncate text-xs text-stone-500">
                 Last running <LocalTime iso={sprite.last_running_at} /> · URL
                 auth{" "}
                 {sprite.url_settings?.auth || "unknown"}
@@ -417,13 +417,13 @@ function SpriteRoster({ sprites }: { sprites: DashboardSprite[] }) {
             </div>
             <div className="flex flex-wrap gap-2">
               <Link
-                className="rounded-full bg-slate-950 px-4 py-1.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                className="rounded-full bg-stone-950 px-4 py-1.5 text-sm font-semibold text-white transition hover:bg-stone-800"
                 href={`/sprite/${encodeURIComponent(sprite.name)}`}
               >
                 Inspect
               </Link>
               <a
-                className="rounded-full border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 transition hover:border-slate-950 hover:text-slate-950"
+                className="rounded-full border border-stone-300 px-3 py-1.5 text-sm font-semibold text-stone-700 transition hover:border-stone-950 hover:text-stone-950"
                 href={getSpriteDashboardUrl(sprite)}
                 target="_blank"
                 rel="noreferrer"
@@ -433,7 +433,7 @@ function SpriteRoster({ sprites }: { sprites: DashboardSprite[] }) {
               </a>
               {sprite.url ? (
                 <a
-                  className="rounded-full border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 transition hover:border-slate-950 hover:text-slate-950"
+                  className="rounded-full border border-stone-300 px-3 py-1.5 text-sm font-semibold text-stone-700 transition hover:border-stone-950 hover:text-stone-950"
                   href={sprite.url}
                   target="_blank"
                   rel="noreferrer"
@@ -468,8 +468,8 @@ function CostExposurePanel({
   const isQuiet = exposure.riskFlags.length === 0 && topSprites.length === 0;
 
   return (
-    <section className="overflow-hidden rounded-[2rem] border border-white/70 bg-slate-950 text-slate-100 shadow-[0_24px_90px_rgba(15,23,42,0.20)]">
-      <div className={isQuiet ? "p-5" : "border-b border-slate-800 p-5"}>
+    <section className="overflow-hidden rounded-[2rem] border border-white/70 bg-stone-950 text-stone-100 shadow-[0_24px_90px_rgba(87,63,28,0.20)]">
+      <div className={isQuiet ? "p-5" : "border-b border-stone-800 p-5"}>
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.22em] text-lime-300">
@@ -478,14 +478,14 @@ function CostExposurePanel({
             <h2 className="mt-2 text-xl font-bold tracking-tight">
               Stop guessing what might be awake.
             </h2>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-400">
               {exposure.disclaimer} Page refresh only reads the control plane
               and stored samples; it does not request Sprite app URLs.
             </p>
           </div>
-          <div className="rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm text-slate-400">
+          <div className="rounded-2xl border border-stone-800 bg-stone-900 px-4 py-3 text-sm text-stone-400">
             Window starts{" "}
-            <span className="font-bold text-slate-100">
+            <span className="font-bold text-stone-100">
               <LocalTime iso={exposure.windowStartedAt} />
             </span>
           </div>
@@ -508,7 +508,7 @@ function CostExposurePanel({
         </div>
 
         {isQuiet ? (
-          <p className="mt-4 text-sm leading-6 text-slate-400">
+          <p className="mt-4 text-sm leading-6 text-stone-400">
             No risk signals and nothing active in the latest control-plane read
             ({exposure.observationCount} observations stored). One clean
             snapshot is not a bill; schedule or run explicit collections over
@@ -525,12 +525,12 @@ function CostExposurePanel({
 
       {!isQuiet ? (
         <div className="grid gap-5 p-5 lg:grid-cols-[0.9fr_1.1fr]">
-          <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
+          <div className="rounded-3xl border border-stone-800 bg-stone-900 p-4">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-stone-500">
               Risk signals
             </p>
             {exposure.riskFlags.length === 0 ? (
-              <p className="mt-3 text-sm leading-6 text-slate-400">
+              <p className="mt-3 text-sm leading-6 text-stone-400">
                 No obvious exposure flags from the latest control-plane read.
               </p>
             ) : (
@@ -538,18 +538,18 @@ function CostExposurePanel({
             )}
           </div>
 
-          <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
+          <div className="rounded-3xl border border-stone-800 bg-stone-900 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-stone-500">
                 Sprites to watch
               </p>
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-stone-500">
                 {exposure.collectionCount} collections · {exposure.observationCount}{" "}
                 Sprite samples
               </span>
             </div>
             {topSprites.length === 0 ? (
-              <p className="mt-3 text-sm leading-6 text-slate-400">
+              <p className="mt-3 text-sm leading-6 text-stone-400">
                 Everything visible is cold or low-signal right now.
               </p>
             ) : (
@@ -578,16 +578,16 @@ function SpriteExposureItem({
   activeTimeStatus: CostExposureSummary["activeTimeStatus"];
 }) {
   return (
-    <li className="rounded-2xl border border-slate-800 bg-slate-950 p-3">
+    <li className="rounded-2xl border border-stone-800 bg-stone-950 p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-semibold text-slate-100">
+            <span className="font-semibold text-stone-100">
               {sprite.spriteName}
             </span>
             <StatusPill status={sprite.currentStatus} />
           </div>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-stone-500">
             URL auth: {sprite.currentUrlAuth} · samples:{" "}
             {sprite.observationCount}
           </p>
@@ -641,7 +641,7 @@ function getStatusGroupClasses(group: SpriteStatusGroup<DashboardSprite>["key"])
     return "border-lime-200 bg-lime-50 text-lime-950";
   }
   if (group === "cold") {
-    return "border-slate-200 bg-slate-50 text-slate-950";
+    return "border-stone-200 bg-stone-50 text-stone-950";
   }
   return "border-amber-200 bg-amber-50 text-amber-950";
 }
@@ -649,17 +649,17 @@ function getStatusGroupClasses(group: SpriteStatusGroup<DashboardSprite>["key"])
 function getStatusDotClasses(status: string) {
   if (status === "running") return "bg-emerald-500";
   if (status === "warm") return "bg-lime-500";
-  if (status === "cold") return "bg-slate-400";
+  if (status === "cold") return "bg-stone-400";
   return "bg-amber-500";
 }
 
 function DarkInfo({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3">
-      <p className="truncate text-[0.68rem] font-bold uppercase tracking-[0.08em] text-slate-500" title={label}>
+    <div className="min-w-0 rounded-2xl border border-stone-800 bg-stone-900 px-4 py-3">
+      <p className="truncate text-[0.68rem] font-bold uppercase tracking-[0.08em] text-stone-500" title={label}>
         {label}
       </p>
-      <p className="mt-1 truncate text-lg font-black text-slate-100" title={value}>
+      <p className="mt-1 truncate text-lg font-black text-stone-100" title={value}>
         {value}
       </p>
     </div>
@@ -673,7 +673,7 @@ function getRiskFlagClasses(severity: CostRiskFlag["severity"]): string {
   if (severity === "warning") {
     return "border-amber-400/30 bg-amber-400/10 text-amber-100";
   }
-  return "border-slate-700 bg-slate-800 text-slate-300";
+  return "border-stone-700 bg-stone-800 text-stone-300";
 }
 
 function formatDuration(ms: number): string {
