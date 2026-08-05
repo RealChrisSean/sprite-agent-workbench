@@ -35,7 +35,10 @@ export const dynamic = "force-dynamic";
 
 type HomeSearchParams = {
   sprite?: string | string[] | undefined;
+  view?: string | string[] | undefined;
 };
+
+type HomeView = "fleet" | "cost" | "sprites";
 
 export default async function Home({
   searchParams,
@@ -47,6 +50,10 @@ export default async function Home({
   if (requestedSpriteName) {
     redirect(`/sprite/${encodeURIComponent(requestedSpriteName)}`);
   }
+
+  const viewParam = readSingleParam(params.view);
+  const view: HomeView =
+    viewParam === "cost" || viewParam === "sprites" ? viewParam : "fleet";
 
   const data = await getDashboardData(null, { loadCheckpoints: false });
   const statusGroups = data.ok ? getSpriteStatusGroups(data.sprites) : [];
@@ -107,26 +114,79 @@ export default async function Home({
               />
             ) : null}
 
-            <FleetStatusPanel
-              groups={statusGroups}
-              orgName={data.orgName}
-              source={data.source}
-              runningLimit={data.counts.runningLimit}
-              warmLimit={data.counts.warmLimit}
-            />
+            <HomeTabs view={view} />
 
-            {data.costExposure ? (
-              <CostExposurePanel
-                exposure={data.costExposure}
-                canWrite={adminAccess.unlocked}
+            {view === "fleet" ? (
+              <FleetStatusPanel
+                groups={statusGroups}
+                orgName={data.orgName}
+                source={data.source}
+                runningLimit={data.counts.runningLimit}
+                warmLimit={data.counts.warmLimit}
               />
             ) : null}
 
-            <SpriteRoster sprites={data.sprites} />
+            {view === "cost" ? (
+              data.costExposure ? (
+                <CostExposurePanel
+                  exposure={data.costExposure}
+                  canWrite={adminAccess.unlocked}
+                />
+              ) : (
+                <section className="rounded-[2rem] border border-white/70 bg-white/75 p-6 text-sm leading-6 text-slate-600 shadow-[0_20px_80px_rgba(15,23,42,0.08)] backdrop-blur">
+                  Cost observations are unavailable right now.
+                </section>
+              )
+            ) : null}
+
+            {view === "sprites" ? <SpriteRoster sprites={data.sprites} /> : null}
           </>
         )}
       </div>
     </main>
+  );
+}
+
+function HomeTabs({ view }: { view: HomeView }) {
+  return (
+    <nav
+      aria-label="Dashboard sections"
+      className="flex w-fit max-w-full flex-wrap gap-1 rounded-full border border-white/70 bg-white/70 p-1.5 shadow-[0_24px_90px_rgba(15,23,42,0.10)] backdrop-blur"
+    >
+      <HomeTab href="/" active={view === "fleet"}>
+        Fleet state
+      </HomeTab>
+      <HomeTab href="/?view=cost" active={view === "cost"}>
+        Cost exposure
+      </HomeTab>
+      <HomeTab href="/?view=sprites" active={view === "sprites"}>
+        Sprites
+      </HomeTab>
+    </nav>
+  );
+}
+
+function HomeTab({
+  href,
+  active,
+  children,
+}: {
+  href: string;
+  active: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      aria-current={active ? "page" : undefined}
+      className={`rounded-full px-5 py-2 text-sm font-bold transition ${
+        active
+          ? "bg-slate-950 text-white shadow-sm"
+          : "text-slate-600 hover:bg-white/80 hover:text-slate-950"
+      }`}
+      href={href}
+    >
+      {children}
+    </Link>
   );
 }
 
