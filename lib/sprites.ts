@@ -595,9 +595,25 @@ function parseCheckpointId(message: string): string | null {
   return match?.[1] ?? null;
 }
 
+// The Sprites control plane only counts interactive sessions as activity, so
+// the Sprite hosting this app can be reported cold while it is serving the
+// very page being viewed. Detect that case from the request host so the
+// dashboard can tell the truth about itself.
+export function isSelfSprite(
+  sprite: { url: string | null },
+  selfHost: string | null | undefined
+): boolean {
+  if (!selfHost || !sprite.url) return false;
+  try {
+    return new URL(sprite.url).host.toLowerCase() === selfHost.toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
 export async function getDashboardData(
   checkpointSpriteName?: string | null,
-  options?: { loadCheckpoints?: boolean }
+  options?: { loadCheckpoints?: boolean; selfHost?: string | null }
 ): Promise<DashboardData> {
   const fetchedAtDate = new Date();
   const fetchedAt = fetchedAtDate.toISOString();
@@ -629,17 +645,27 @@ export async function getDashboardData(
           sprite,
           latestHealthProbes.get(sprite.name)
         );
+        const servingThisPage = isSelfSprite(sprite, options?.selfHost);
 
         return {
           ...sprite,
+          // Serving this page load is proof of activity, whatever the
+          // control plane says.
+          status: servingThisPage ? "running" : sprite.status,
           checkpoints: checkpoints.items,
           checkpointCountLoaded: sprite.name === selectedCheckpointSpriteName,
           checkpointError: checkpoints.error,
           health,
-          sleep: inferSleep(sprite, health),
+          sleep: inferSleep(sprite, health, { servingThisPage }),
         };
       })
     );
+    const promotedFrom = list.sprites
+      .filter(
+        (sprite) =>
+          isSelfSprite(sprite, options?.selfHost) && sprite.status !== "running"
+      )
+      .map((sprite) => sprite.status);
     const costExposure = await readCostExposure({
       sprites,
       source,
@@ -652,9 +678,9 @@ export async function getDashboardData(
       orgName: list.name,
       counts: {
         total: list.sprites.length,
-        running: list.running,
-        warm: list.warm,
-        cold: list.cold,
+        running: list.running + promotedFrom.length,
+        warm: list.warm - promotedFrom.filter((s) => s === "warm").length,
+        cold: list.cold - promotedFrom.filter((s) => s === "cold").length,
         runningLimit: list.running_limit,
         warmLimit: list.warm_limit,
       },
@@ -1123,7 +1149,8 @@ function resolveStoredHealth(
 
 function inferSleep(
   sprite: SpriteSummary,
-  health: HealthCheckResult
+  health: HealthCheckResult,
+  options?: { servingThisPage?: boolean }
 ): SleepInference {
   const evidence: string[] = [];
   const lastRunning = formatRelativeTime(sprite.last_running_at);
@@ -1133,6 +1160,20 @@ function inferSleep(
   if (lastWarming) evidence.push(`Last warming: ${lastWarming}`);
   evidence.push(`URL auth: ${sprite.url_settings?.auth || "unknown"}`);
   evidence.push(`Health: ${health.label}`);
+
+  if (options?.servingThisPage) {
+    return {
+      label: "Active now — serving this dashboard",
+      tone: "good",
+      evidence: [
+        "This Sprite served the page you are viewing right now, which is direct proof it is awake.",
+        sprite.status !== "running"
+          ? `The control plane reported "${sprite.status}" because edge HTTP traffic does not count as a session; the Workbench corrected it with first-hand evidence.`
+          : "Sprites also reports this environment is running.",
+        ...evidence,
+      ],
+    };
+  }
 
   if (sprite.status === "running") {
     return {

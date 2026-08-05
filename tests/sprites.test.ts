@@ -26,6 +26,7 @@ import {
   getSpriteDashboardUrl,
   getSpriteDataSource,
   getSpriteStatusGroups,
+  isSelfSprite,
   observeSpriteFleet,
   parseSpriteExecSessions,
   parseSpriteServices,
@@ -328,6 +329,35 @@ describe("Sprite API helpers", () => {
   });
 });
 
+describe("isSelfSprite", () => {
+  it("matches when the request host equals the Sprite URL host", () => {
+    expect(
+      isSelfSprite(
+        { url: "https://workbench-abc.sprites.app" },
+        "workbench-abc.sprites.app"
+      )
+    ).toBe(true);
+  });
+
+  it("is case-insensitive and ignores non-matching hosts", () => {
+    expect(
+      isSelfSprite(
+        { url: "https://Workbench-ABC.sprites.app" },
+        "workbench-abc.sprites.app"
+      )
+    ).toBe(true);
+    expect(
+      isSelfSprite({ url: "https://other.sprites.app" }, "workbench-abc.sprites.app")
+    ).toBe(false);
+  });
+
+  it("never matches without a URL or host, or with an invalid URL", () => {
+    expect(isSelfSprite({ url: null }, "workbench-abc.sprites.app")).toBe(false);
+    expect(isSelfSprite({ url: "https://a.example" }, null)).toBe(false);
+    expect(isSelfSprite({ url: "not a url" }, "not a url")).toBe(false);
+  });
+});
+
 describe("getDashboardData", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -407,6 +437,111 @@ describe("getDashboardData", () => {
         authorization: "Bearer token-123",
       },
     });
+  });
+
+  it("marks the Sprite serving the current page as running with truthful evidence", async () => {
+    useObservationFile();
+    vi.stubEnv("SPRITES_API_TOKEN", "token-123");
+    vi.stubEnv("SPRITES_API_BASE_URL", "https://api.test");
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "https://api.test/v1/sprites/") {
+        return jsonResponse({
+          name: "chris-sean-dabatos",
+          running: 0,
+          warm: 0,
+          cold: 1,
+          running_limit: 10,
+          warm_limit: 10,
+          next_continuation_token: null,
+          has_more: false,
+          sprites: [
+            {
+              id: "sprite-1",
+              name: "recallmem",
+              status: "cold",
+              version: null,
+              url: "https://recallmem.example.test",
+              url_settings: { auth: "sprite", private_access: "admins" },
+              created_at: "2026-06-01T00:00:00Z",
+              organization: "chris-sean-dabatos",
+              last_running_at: null,
+              last_warming_at: null,
+              updated_at: "2026-06-01T00:00:00Z",
+              environment_version: null,
+            },
+          ],
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const data = await getDashboardData(null, {
+      loadCheckpoints: false,
+      selfHost: "recallmem.example.test",
+    });
+
+    expect(data.ok).toBe(true);
+    expect(data.sprites[0].status).toBe("running");
+    expect(data.sprites[0].sleep.label).toBe(
+      "Active now — serving this dashboard"
+    );
+    expect(data.sprites[0].sleep.evidence[0]).toContain(
+      "served the page you are viewing right now"
+    );
+    expect(data.sprites[0].sleep.evidence[1]).toContain('reported "cold"');
+    expect(data.counts).toMatchObject({ running: 1, warm: 0, cold: 0 });
+  });
+
+  it("does not promote any Sprite when the request host matches none of them", async () => {
+    useObservationFile();
+    vi.stubEnv("SPRITES_API_TOKEN", "token-123");
+    vi.stubEnv("SPRITES_API_BASE_URL", "https://api.test");
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "https://api.test/v1/sprites/") {
+        return jsonResponse({
+          name: "chris-sean-dabatos",
+          running: 0,
+          warm: 0,
+          cold: 1,
+          running_limit: 10,
+          warm_limit: 10,
+          next_continuation_token: null,
+          has_more: false,
+          sprites: [
+            {
+              id: "sprite-1",
+              name: "recallmem",
+              status: "cold",
+              version: null,
+              url: "https://recallmem.example.test",
+              url_settings: { auth: "sprite", private_access: "admins" },
+              created_at: "2026-06-01T00:00:00Z",
+              organization: "chris-sean-dabatos",
+              last_running_at: null,
+              last_warming_at: null,
+              updated_at: "2026-06-01T00:00:00Z",
+              environment_version: null,
+            },
+          ],
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const data = await getDashboardData(null, {
+      loadCheckpoints: false,
+      selfHost: "localhost:3137",
+    });
+
+    expect(data.ok).toBe(true);
+    expect(data.sprites[0].status).toBe("cold");
+    expect(data.counts).toMatchObject({ running: 0, cold: 1 });
   });
 
   it("does not request a public Sprite URL while rendering dashboard data", async () => {

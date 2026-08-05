@@ -22,7 +22,7 @@ import {
 } from "@/lib/admin-auth";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { AdminAccessForm } from "./AdminAccessForm";
 import { CollectNowButton } from "./CollectNowButton";
 import { LocalTime } from "./LocalTime";
@@ -55,7 +55,13 @@ export default async function Home({
   const view: HomeView =
     viewParam === "cost" || viewParam === "sprites" ? viewParam : "fleet";
 
-  const data = await getDashboardData(null, { loadCheckpoints: false });
+  const headerStore = await headers();
+  const selfHost =
+    headerStore.get("x-forwarded-host") ?? headerStore.get("host");
+  const data = await getDashboardData(null, {
+    loadCheckpoints: false,
+    selfHost,
+  });
   const statusGroups = data.ok ? getSpriteStatusGroups(data.sprites) : [];
   const cookieStore = await cookies();
   const adminAccess = {

@@ -29,7 +29,7 @@ import {
   type MeterSummary,
 } from "@/lib/metering";
 import Link from "next/link";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { AdminAccessForm } from "../../AdminAccessForm";
 import { AgentRunEventForm } from "../../AgentRunEventForm";
 import { CheckpointCreateForm } from "../../CheckpointCreateForm";
@@ -58,7 +58,10 @@ export default async function SpriteDetailPage({
 }) {
   const { name } = await params;
   const spriteName = decodeURIComponent(name);
-  const data = await getDashboardData(spriteName);
+  const headerStore = await headers();
+  const selfHost =
+    headerStore.get("x-forwarded-host") ?? headerStore.get("host");
+  const data = await getDashboardData(spriteName, { selfHost });
   const sprite = data.ok
     ? (data.sprites.find((item) => item.name === spriteName) ?? null)
     : null;
